@@ -54,7 +54,7 @@ app.use(morgan('dev'));
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
-    message: 'EMS API running',
+    message: 'lexodd API running',
     environment: process.env.NODE_ENV,
     version: require('./package.json').version,
     database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
@@ -64,7 +64,7 @@ app.get('/api/health', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     success: true,
-    message: 'Employee Management System API v2.0',
+    message: 'lexodd Hypernova System API v2.0',
     endpoints: {
       auth: 'POST /api/auth/signup, POST /api/auth/login, GET /api/auth/me',
       employees: 'GET /api/employees, GET /api/employees/dashboard',
@@ -107,7 +107,7 @@ const startServer = async () => {
   app.listen(PORT, '0.0.0.0', () => {
     console.log('');
     console.log('================================================');
-    console.log('  Employee Management System API');
+    console.log('  lexodd Hypernova System API');
     console.log('================================================');
     console.log(`  Server: http://localhost:${PORT}`);
     console.log(`  Health: http://localhost:${PORT}/api/health`);
