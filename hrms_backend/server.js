@@ -116,6 +116,16 @@ const startServer = async () => {
   });
 };
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Welcome to lexodd API',
+    docs: '/api',
+    health: '/api/health'
+  });
+});
+
 startServer();
 
 module.exports = app;
