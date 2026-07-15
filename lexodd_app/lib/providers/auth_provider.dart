@@ -32,7 +32,6 @@ class AuthProvider extends ChangeNotifier {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
-
     try {
       _employee = await _authService.signup(data);
       _state = AuthState.authenticated;
@@ -50,7 +49,6 @@ class AuthProvider extends ChangeNotifier {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
-
     try {
       _employee = await _authService.login(email, password);
       _state = AuthState.authenticated;
@@ -68,9 +66,9 @@ class AuthProvider extends ChangeNotifier {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
-
     try {
-      _employee = await _authService.verifyLoginOTP(email, otp);
+      await _authService.verifyOTP(email, otp, purpose: 'login');
+      _employee = _authService.currentEmployee;
       _state = AuthState.authenticated;
       notifyListeners();
       return true;
@@ -82,9 +80,9 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendOTP(String email, {String purpose = 'login'}) async {
+  Future<bool> sendOTP(String email, {String purpose = 'email_verification'}) async {
     try {
-      await _authService.sendLoginOTP(email);
+      await _authService.sendOTP(email, purpose: purpose);
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -93,20 +91,30 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshProfile() async {
+  Future<bool> verifyOTP(String email, String otp, {String purpose = 'email_verification'}) async {
     try {
-      _employee = await _authService.getProfile();
-      notifyListeners();
+      await _authService.verifyOTP(email, otp, purpose: purpose);
+      return true;
     } catch (e) {
-      // Silent fail for profile refresh
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> resetPassword(String email, String otp, String newPassword) async {
+    try {
+      return await _authService.resetPassword(email, otp, newPassword);
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
     }
   }
 
   Future<bool> updateProfile(Map<String, dynamic> data) async {
-    if (_employee == null || _employee!.id == null) return false;
-    
     try {
-      _employee = await _authService.updateProfile(_employee!.id!, data);
+      _employee = await _authService.updateProfile(data);
       notifyListeners();
       return true;
     } catch (e) {
@@ -126,9 +134,6 @@ class AuthProvider extends ChangeNotifier {
 
   void clearError() {
     _errorMessage = null;
-    if (_state == AuthState.error) {
-      _state = _employee != null ? AuthState.authenticated : AuthState.unauthenticated;
-    }
     notifyListeners();
   }
 }

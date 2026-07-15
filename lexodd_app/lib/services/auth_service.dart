@@ -1,12 +1,11 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../config/constants.dart';
+import '../config/constant.dart';
 import '../models/employee.dart';
 import 'api_service.dart';
 
 class AuthService {
   final ApiService _api = ApiService();
-
   Employee? _currentEmployee;
   Employee? get currentEmployee => _currentEmployee;
   bool get isLoggedIn => _currentEmployee != null;
@@ -20,14 +19,11 @@ class AuthService {
     }
   }
 
-  // ===== SIGNUP =====
+  // SIGNUP - POST /api/auth/signup
   Future<Employee> signup(Map<String, dynamic> data) async {
     final response = await _api.post('/auth/signup', body: data);
-    
     if (response['success'] == true) {
       await _api.setToken(response['data']['token']);
-      
-      // Fetch full profile
       final profile = await getProfile();
       _currentEmployee = profile;
       await _saveEmployeeLocally(profile);
@@ -36,16 +32,11 @@ class AuthService {
     throw ApiException(response['message'] ?? 'Signup failed');
   }
 
-  // ===== LOGIN =====
+  // LOGIN - POST /api/auth/login
   Future<Employee> login(String email, String password) async {
-    final response = await _api.post('/auth/login', body: {
-      'email': email,
-      'password': password,
-    });
-
+    final response = await _api.post('/auth/login', body: {'email': email, 'password': password});
     if (response['success'] == true) {
       await _api.setToken(response['data']['token']);
-      
       final profile = await getProfile();
       _currentEmployee = profile;
       await _saveEmployeeLocally(profile);
@@ -54,76 +45,37 @@ class AuthService {
     throw ApiException(response['message'] ?? 'Login failed');
   }
 
-  // ===== OTP LOGIN =====
-  Future<void> sendLoginOTP(String email) async {
-    final response = await _api.post('/otp/send', body: {
-      'email': email,
-      'purpose': 'login',
-    });
-    if (response['success'] != true) {
-      throw ApiException(response['message'] ?? 'Failed to send OTP');
-    }
+  // SEND OTP - POST /api/otp/send
+  Future<void> sendOTP(String email, {String purpose = 'email_verification'}) async {
+    final response = await _api.post('/otp/send', body: {'email': email, 'purpose': purpose});
+    if (response['success'] != true) throw ApiException(response['message'] ?? 'Failed to send OTP');
   }
 
-  Future<Employee> verifyLoginOTP(String email, String otp) async {
-    final response = await _api.post('/otp/verify', body: {
-      'email': email,
-      'otp': otp,
-      'purpose': 'login',
-    });
-
-    if (response['success'] == true && response['data']['token'] != null) {
-      await _api.setToken(response['data']['token']);
-      
-      final profile = await getProfile();
-      _currentEmployee = profile;
-      await _saveEmployeeLocally(profile);
-      return profile;
+  // VERIFY OTP - POST /api/otp/verify
+  Future<Map<String, dynamic>> verifyOTP(String email, String otp, {String purpose = 'email_verification'}) async {
+    final response = await _api.post('/otp/verify', body: {'email': email, 'otp': otp, 'purpose': purpose});
+    if (response['success'] == true) {
+      // If login OTP, save token
+      if (response['data']?['token'] != null) {
+        await _api.setToken(response['data']['token']);
+        final profile = await getProfile();
+        _currentEmployee = profile;
+        await _saveEmployeeLocally(profile);
+      }
+      return response['data'] ?? {};
     }
     throw ApiException(response['message'] ?? 'OTP verification failed');
   }
 
-  // ===== EMAIL VERIFICATION =====
-  Future<void> sendEmailVerificationOTP(String email) async {
-    final response = await _api.post('/otp/send', body: {
-      'email': email,
-      'purpose': 'email_verification',
-    });
-    if (response['success'] != true) {
-      throw ApiException(response['message'] ?? 'Failed to send OTP');
-    }
-  }
-
-  Future<bool> verifyEmailOTP(String email, String otp) async {
-    final response = await _api.post('/otp/verify', body: {
-      'email': email,
-      'otp': otp,
-      'purpose': 'email_verification',
-    });
-    return response['success'] == true;
-  }
-
-  // ===== PASSWORD RESET =====
-  Future<void> sendPasswordResetOTP(String email) async {
-    final response = await _api.post('/otp/send', body: {
-      'email': email,
-      'purpose': 'password_reset',
-    });
-    if (response['success'] != true) {
-      throw ApiException(response['message'] ?? 'Failed to send OTP');
-    }
-  }
-
+  // RESET PASSWORD - POST /api/auth/reset-password
   Future<bool> resetPassword(String email, String otp, String newPassword) async {
     final response = await _api.post('/auth/reset-password', body: {
-      'email': email,
-      'otp': otp,
-      'newPassword': newPassword,
+      'email': email, 'otp': otp, 'newPassword': newPassword,
     });
     return response['success'] == true;
   }
 
-  // ===== PROFILE =====
+  // GET PROFILE - GET /api/auth/me
   Future<Employee> getProfile() async {
     final response = await _api.get('/auth/me');
     if (response['success'] == true) {
@@ -135,8 +87,9 @@ class AuthService {
     throw ApiException('Failed to fetch profile');
   }
 
-  Future<Employee> updateProfile(String id, Map<String, dynamic> data) async {
-    final response = await _api.put('/employees/$id', body: data);
+  // UPDATE PROFILE - PUT /api/auth/update-profile
+  Future<Employee> updateProfile(Map<String, dynamic> data) async {
+    final response = await _api.put('/auth/update-profile', body: data);
     if (response['success'] == true) {
       final employee = Employee.fromJson(response['data']['employee']);
       _currentEmployee = employee;
@@ -146,27 +99,24 @@ class AuthService {
     throw ApiException(response['message'] ?? 'Update failed');
   }
 
+  // CHANGE PASSWORD - PUT /api/auth/change-password
   Future<void> changePassword(String currentPassword, String newPassword) async {
     final response = await _api.put('/auth/change-password', body: {
-      'currentPassword': currentPassword,
-      'newPassword': newPassword,
+      'currentPassword': currentPassword, 'newPassword': newPassword,
     });
     if (response['success'] == true) {
-      if (response['data']?['token'] != null) {
-        await _api.setToken(response['data']['token']);
-      }
+      if (response['data']?['token'] != null) await _api.setToken(response['data']['token']);
     } else {
       throw ApiException(response['message'] ?? 'Password change failed');
     }
   }
 
-  // ===== LOGOUT =====
+  // LOGOUT
   Future<void> logout() async {
     _currentEmployee = null;
     await _api.clearToken();
   }
 
-  // ===== HELPERS =====
   Future<void> _saveEmployeeLocally(Employee employee) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.employeeKey, jsonEncode(employee.toJson()));

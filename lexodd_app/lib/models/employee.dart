@@ -11,7 +11,6 @@ class Employee {
   final String? bloodGroup;
   final String? maritalStatus;
   final String? profilePhoto;
-  final String? nationality;
   final Address? address;
   final Address? permanentAddress;
   final bool sameAsPermanent;
@@ -30,74 +29,36 @@ class Employee {
   final String? role;
   final bool isEmailVerified;
   final bool isActive;
-  final DateTime? lastLogin;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
 
-  // Computed
   String get fullName => '$firstName $lastName';
+  String get initials => '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'.toUpperCase();
   
   int? get age {
     if (dateOfBirth == null) return null;
     final today = DateTime.now();
     int age = today.year - dateOfBirth!.year;
-    if (today.month < dateOfBirth!.month || 
-        (today.month == dateOfBirth!.month && today.day < dateOfBirth!.day)) {
-      age--;
-    }
+    if (today.month < dateOfBirth!.month || (today.month == dateOfBirth!.month && today.day < dateOfBirth!.day)) age--;
     return age;
   }
 
   String get tenure {
     if (dateOfJoining == null) return 'N/A';
     final today = DateTime.now();
-    final joining = dateOfJoining!;
-    int totalMonths = (today.year - joining.year) * 12 + (today.month - joining.month);
+    int totalMonths = (today.year - dateOfJoining!.year) * 12 + (today.month - dateOfJoining!.month);
     int years = totalMonths ~/ 12;
     int months = totalMonths % 12;
-    if (years > 0) return '$years yr $months mo';
-    return '$months months';
-  }
-
-  String get initials {
-    return '${firstName.isNotEmpty ? firstName[0] : ''}${lastName.isNotEmpty ? lastName[0] : ''}'.toUpperCase();
+    return years > 0 ? '$years yr $months mo' : '$months months';
   }
 
   Employee({
-    this.id,
-    this.employeeId,
-    required this.firstName,
-    required this.lastName,
-    required this.email,
-    required this.phone,
-    this.alternatePhone,
-    this.dateOfBirth,
-    required this.gender,
-    this.bloodGroup,
-    this.maritalStatus,
-    this.profilePhoto,
-    this.nationality,
-    this.address,
-    this.permanentAddress,
-    this.sameAsPermanent = false,
-    required this.department,
-    required this.designation,
-    this.dateOfJoining,
-    required this.employmentType,
-    this.workLocation,
-    this.reportingManager,
-    this.ctc,
-    this.emergencyContact,
-    this.bankDetails,
-    this.documents,
-    this.education,
-    this.leaveBalance,
-    this.role,
-    this.isEmailVerified = false,
-    this.isActive = true,
-    this.lastLogin,
-    this.createdAt,
-    this.updatedAt,
+    this.id, this.employeeId, required this.firstName, required this.lastName,
+    required this.email, required this.phone, this.alternatePhone, this.dateOfBirth,
+    required this.gender, this.bloodGroup, this.maritalStatus, this.profilePhoto,
+    this.address, this.permanentAddress, this.sameAsPermanent = false,
+    required this.department, required this.designation, this.dateOfJoining,
+    required this.employmentType, this.workLocation, this.reportingManager, this.ctc,
+    this.emergencyContact, this.bankDetails, this.documents, this.education,
+    this.leaveBalance, this.role, this.isEmailVerified = false, this.isActive = true,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
@@ -114,7 +75,6 @@ class Employee {
       bloodGroup: json['bloodGroup'],
       maritalStatus: json['maritalStatus'],
       profilePhoto: json['profilePhoto'],
-      nationality: json['nationality'],
       address: json['address'] != null ? Address.fromJson(json['address']) : null,
       permanentAddress: json['permanentAddress'] != null ? Address.fromJson(json['permanentAddress']) : null,
       sameAsPermanent: json['sameAsPermanent'] ?? false,
@@ -128,249 +88,99 @@ class Employee {
       emergencyContact: json['emergencyContact'] != null ? EmergencyContact.fromJson(json['emergencyContact']) : null,
       bankDetails: json['bankDetails'] != null ? BankDetails.fromJson(json['bankDetails']) : null,
       documents: json['documents'] != null ? DocumentDetails.fromJson(json['documents']) : null,
-      education: json['education'] != null 
-          ? (json['education'] as List).map((e) => Education.fromJson(e)).toList() 
-          : null,
+      education: json['education'] != null ? (json['education'] as List).map((e) => Education.fromJson(e)).toList() : null,
       leaveBalance: json['leaveBalance'] != null ? LeaveBalance.fromJson(json['leaveBalance']) : null,
       role: json['role'],
       isEmailVerified: json['isEmailVerified'] ?? false,
       isActive: json['isActive'] ?? true,
-      lastLogin: json['lastLogin'] != null ? DateTime.parse(json['lastLogin']) : null,
-      createdAt: json['createdAt'] != null ? DateTime.parse(json['createdAt']) : null,
-      updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : null,
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
-      'firstName': firstName,
-      'lastName': lastName,
-      'email': email,
-      'phone': phone,
-      'alternatePhone': alternatePhone,
-      'dateOfBirth': dateOfBirth?.toIso8601String(),
-      'gender': gender,
-      'bloodGroup': bloodGroup,
-      'maritalStatus': maritalStatus,
-      'address': address?.toJson(),
-      'permanentAddress': permanentAddress?.toJson(),
-      'sameAsPermanent': sameAsPermanent,
-      'department': department,
-      'designation': designation,
-      'dateOfJoining': dateOfJoining?.toIso8601String(),
-      'employmentType': employmentType,
-      'workLocation': workLocation,
-      'reportingManager': reportingManager,
-      'ctc': ctc,
-      'emergencyContact': emergencyContact?.toJson(),
-      'bankDetails': bankDetails?.toJson(),
-      'documents': documents?.toJson(),
-      'education': education?.map((e) => e.toJson()).toList(),
+      'firstName': firstName, 'lastName': lastName, 'email': email, 'phone': phone,
+      'alternatePhone': alternatePhone, 'dateOfBirth': dateOfBirth?.toIso8601String(),
+      'gender': gender, 'bloodGroup': bloodGroup, 'maritalStatus': maritalStatus,
+      'address': address?.toJson(), 'permanentAddress': permanentAddress?.toJson(),
+      'sameAsPermanent': sameAsPermanent, 'department': department, 'designation': designation,
+      'dateOfJoining': dateOfJoining?.toIso8601String(), 'employmentType': employmentType,
+      'workLocation': workLocation, 'reportingManager': reportingManager, 'ctc': ctc,
+      'emergencyContact': emergencyContact?.toJson(), 'bankDetails': bankDetails?.toJson(),
+      'documents': documents?.toJson(), 'education': education?.map((e) => e.toJson()).toList(),
     };
-  }
-
-  Employee copyWith({
-    String? firstName,
-    String? lastName,
-    String? phone,
-    String? department,
-    String? designation,
-  }) {
-    return Employee(
-      id: id,
-      employeeId: employeeId,
-      firstName: firstName ?? this.firstName,
-      lastName: lastName ?? this.lastName,
-      email: email,
-      phone: phone ?? this.phone,
-      dateOfBirth: dateOfBirth,
-      gender: gender,
-      department: department ?? this.department,
-      designation: designation ?? this.designation,
-      dateOfJoining: dateOfJoining,
-      employmentType: employmentType,
-    );
   }
 }
 
 class Address {
-  final String? street;
-  final String? city;
-  final String? state;
-  final String? pincode;
-  final String? country;
-
+  final String? street, city, state, pincode, country;
   Address({this.street, this.city, this.state, this.pincode, this.country});
-
-  factory Address.fromJson(Map<String, dynamic> json) {
-    return Address(
-      street: json['street'],
-      city: json['city'],
-      state: json['state'],
-      pincode: json['pincode'],
-      country: json['country'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'street': street,
-      'city': city,
-      'state': state,
-      'pincode': pincode,
-      'country': country,
-    };
-  }
-
-  String get fullAddress {
-    List<String> parts = [];
-    if (street != null && street!.isNotEmpty) parts.add(street!);
-    if (city != null && city!.isNotEmpty) parts.add(city!);
-    if (state != null && state!.isNotEmpty) parts.add(state!);
-    if (pincode != null && pincode!.isNotEmpty) parts.add(pincode!);
-    if (country != null && country!.isNotEmpty) parts.add(country!);
-    return parts.join(', ');
-  }
+  factory Address.fromJson(Map<String, dynamic> json) => Address(
+    street: json['street'], city: json['city'], state: json['state'],
+    pincode: json['pincode'], country: json['country'],
+  );
+  Map<String, dynamic> toJson() => {
+    'street': street, 'city': city, 'state': state, 'pincode': pincode, 'country': country,
+  };
+  String get fullAddress => [street, city, state, pincode, country].where((e) => e != null && e.isNotEmpty).join(', ');
 }
 
 class EmergencyContact {
-  final String? name;
-  final String? relationship;
-  final String? phone;
-
+  final String? name, relationship, phone;
   EmergencyContact({this.name, this.relationship, this.phone});
-
-  factory EmergencyContact.fromJson(Map<String, dynamic> json) {
-    return EmergencyContact(
-      name: json['name'],
-      relationship: json['relationship'],
-      phone: json['phone'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'relationship': relationship,
-      'phone': phone,
-    };
-  }
+  factory EmergencyContact.fromJson(Map<String, dynamic> json) => EmergencyContact(
+    name: json['name'], relationship: json['relationship'], phone: json['phone'],
+  );
+  Map<String, dynamic> toJson() => {'name': name, 'relationship': relationship, 'phone': phone};
 }
 
 class BankDetails {
-  final String? accountNumber;
-  final String? bankName;
-  final String? branchName;
-  final String? ifscCode;
-  final String? accountType;
-
+  final String? accountNumber, bankName, branchName, ifscCode, accountType;
   BankDetails({this.accountNumber, this.bankName, this.branchName, this.ifscCode, this.accountType});
-
-  factory BankDetails.fromJson(Map<String, dynamic> json) {
-    return BankDetails(
-      accountNumber: json['accountNumber'],
-      bankName: json['bankName'],
-      branchName: json['branchName'],
-      ifscCode: json['ifscCode'],
-      accountType: json['accountType'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'accountNumber': accountNumber,
-      'bankName': bankName,
-      'branchName': branchName,
-      'ifscCode': ifscCode,
-      'accountType': accountType,
-    };
-  }
+  factory BankDetails.fromJson(Map<String, dynamic> json) => BankDetails(
+    accountNumber: json['accountNumber'], bankName: json['bankName'],
+    branchName: json['branchName'], ifscCode: json['ifscCode'], accountType: json['accountType'],
+  );
+  Map<String, dynamic> toJson() => {
+    'accountNumber': accountNumber, 'bankName': bankName, 'branchName': branchName,
+    'ifscCode': ifscCode, 'accountType': accountType,
+  };
 }
 
 class DocumentDetails {
-  final String? aadharNumber;
-  final String? panNumber;
-  final String? passportNumber;
-  final String? drivingLicense;
-
+  final String? aadharNumber, panNumber, passportNumber, drivingLicense;
   DocumentDetails({this.aadharNumber, this.panNumber, this.passportNumber, this.drivingLicense});
-
-  factory DocumentDetails.fromJson(Map<String, dynamic> json) {
-    return DocumentDetails(
-      aadharNumber: json['aadharNumber'],
-      panNumber: json['panNumber'],
-      passportNumber: json['passportNumber'],
-      drivingLicense: json['drivingLicense'],
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'aadharNumber': aadharNumber,
-      'panNumber': panNumber,
-      'passportNumber': passportNumber,
-      'drivingLicense': drivingLicense,
-    };
-  }
+  factory DocumentDetails.fromJson(Map<String, dynamic> json) => DocumentDetails(
+    aadharNumber: json['aadharNumber'], panNumber: json['panNumber'],
+    passportNumber: json['passportNumber'], drivingLicense: json['drivingLicense'],
+  );
+  Map<String, dynamic> toJson() => {
+    'aadharNumber': aadharNumber, 'panNumber': panNumber,
+    'passportNumber': passportNumber, 'drivingLicense': drivingLicense,
+  };
 }
 
 class Education {
-  final String? degree;
-  final String? institution;
-  final String? university;
+  final String? degree, institution, university;
   final int? yearOfPassing;
   final double? percentage;
-
   Education({this.degree, this.institution, this.university, this.yearOfPassing, this.percentage});
-
-  factory Education.fromJson(Map<String, dynamic> json) {
-    return Education(
-      degree: json['degree'],
-      institution: json['institution'],
-      university: json['university'],
-      yearOfPassing: json['yearOfPassing'],
-      percentage: json['percentage']?.toDouble(),
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'degree': degree,
-      'institution': institution,
-      'university': university,
-      'yearOfPassing': yearOfPassing,
-      'percentage': percentage,
-    };
-  }
+  factory Education.fromJson(Map<String, dynamic> json) => Education(
+    degree: json['degree'], institution: json['institution'], university: json['university'],
+    yearOfPassing: json['yearOfPassing'], percentage: json['percentage']?.toDouble(),
+  );
+  Map<String, dynamic> toJson() => {
+    'degree': degree, 'institution': institution, 'university': university,
+    'yearOfPassing': yearOfPassing, 'percentage': percentage,
+  };
 }
 
 class LeaveBalance {
-  final double casual;
-  final double sick;
-  final double earned;
-  final double maternity;
-  final double paternity;
-  final double compOff;
-
-  LeaveBalance({
-    this.casual = 12,
-    this.sick = 12,
-    this.earned = 15,
-    this.maternity = 0,
-    this.paternity = 0,
-    this.compOff = 0,
-  });
-
-  factory LeaveBalance.fromJson(Map<String, dynamic> json) {
-    return LeaveBalance(
-      casual: (json['casual'] ?? 12).toDouble(),
-      sick: (json['sick'] ?? 12).toDouble(),
-      earned: (json['earned'] ?? 15).toDouble(),
-      maternity: (json['maternity'] ?? 0).toDouble(),
-      paternity: (json['paternity'] ?? 0).toDouble(),
-      compOff: (json['compOff'] ?? 0).toDouble(),
-    );
-  }
-
-  double get total => casual + sick + earned + maternity + paternity + compOff;
+  final double casual, sick, earned, maternity, paternity, compOff;
+  LeaveBalance({this.casual = 12, this.sick = 12, this.earned = 15, this.maternity = 0, this.paternity = 0, this.compOff = 0});
+  factory LeaveBalance.fromJson(Map<String, dynamic> json) => LeaveBalance(
+    casual: (json['casual'] ?? 12).toDouble(), sick: (json['sick'] ?? 12).toDouble(),
+    earned: (json['earned'] ?? 15).toDouble(), maternity: (json['maternity'] ?? 0).toDouble(),
+    paternity: (json['paternity'] ?? 0).toDouble(), compOff: (json['compOff'] ?? 0).toDouble(),
+  );
+  double get total => casual + sick + earned + compOff;
 }
