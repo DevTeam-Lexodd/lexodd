@@ -71,12 +71,10 @@ class AppTheme {
         borderSide: const BorderSide(color: errorColor),
       ),
     ),
-    cardTheme: widget(
-      child: CardTheme(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: Colors.white,
-      ),
+    cardTheme: CardThemeData(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.white,
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(
       backgroundColor: Colors.white,
@@ -85,13 +83,5 @@ class AppTheme {
       type: BottomNavigationBarType.fixed,
       elevation: 20,
     ),
-  );
-}
-
-CardThemeData? widget({required CardTheme child}) {
-  return CardThemeData(
-    elevation: child.elevation,
-    shape: child.shape,
-    color: child.color,
   );
 }

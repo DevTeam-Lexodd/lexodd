@@ -67,7 +67,7 @@ async function sendOTP(email, otp, purpose) {
   <table width="600" style="margin:auto;background:#fff;border-radius:12px;">
     <tr>
       <td style="background:linear-gradient(135deg,#667eea,#764ba2);padding:40px;text-align:center;">
-        <h1 style="color:#fff;margin:0;">EMS Portal</h1>
+        <h1 style="color:#fff;margin:0;">Lexodd Hypernova</h1>
       </td>
     </tr>
     <tr>

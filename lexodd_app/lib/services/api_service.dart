@@ -94,7 +94,14 @@ class ApiService {
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;
     } else {
-      throw ApiException(body['message'] ?? 'An error occurred', statusCode: response.statusCode);
+      final errors = body['errors'];
+      final validationMessage = errors is List && errors.isNotEmpty
+          ? errors
+              .map((error) => '${error['field']}: ${error['message']}')
+              .join('\n')
+          : null;
+      throw ApiException(validationMessage ?? body['message'] ?? 'An error occurred',
+          statusCode: response.statusCode);
     }
   }
 }

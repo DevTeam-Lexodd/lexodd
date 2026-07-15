@@ -45,22 +45,26 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
     password
   });
 
-  // Send OTP via Brevo
+  const token = employee.getSignedJwtToken();
+  const { otp, verificationToken } = await OTP.createOTP(email, 'email_verification');
+
   try {
-    const otp = await OTP.createOTP(email, 'email_verification');
-    logger.info(`OTP for ${email}: ${otp}`);
-    await sendOTP(email, otp, 'email_verification');
-  } catch (err) {
-    logger.warn(`OTP send failed: ${err.message}`);
+    const emailResult = await sendOTP(email, otp, 'email_verification');
+    if (!emailResult.success) {
+      throw new AppError('Unable to send the verification email. Check the email service configuration and try again.', 502);
+    }
+  } catch (error) {
+    await Employee.findByIdAndDelete(employee._id);
+    throw error;
   }
 
-  const token = employee.getSignedJwtToken();
   employee.password = undefined;
 
   logger.info(`New employee: ${employee.employeeId} - ${employee.fullName}`);
 
-  return ApiResponse.success(res, 201, 'Registration successful. Please verify email.', {
+  return ApiResponse.success(res, 201, 'Registration successful. A verification code was sent to your email.', {
     token,
+    verificationToken,
     employee: {
       id: employee._id,
       employeeId: employee.employeeId,
@@ -125,26 +129,24 @@ router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
     if (!employee) throw new NotFoundError('Account');
   }
 
-  const otp = await OTP.createOTP(email, purpose || 'email_verification');
-  logger.info(`OTP for ${email}: ${otp}`);
+  const { otp, verificationToken } = await OTP.createOTP(email, purpose || 'email_verification');
 
   try {
-    await sendOTP(email, otp, purpose || 'email_verification');
+    const emailResult = await sendOTP(email, otp, purpose || 'email_verification');
+    if (!emailResult.success) throw new AppError('Unable to send OTP email. Please try again later.', 502);
   } catch (err) {
     logger.warn(`Email failed: ${err.message}`);
-    if (process.env.NODE_ENV === 'development') {
-      return ApiResponse.success(res, 200, `OTP: ${otp} (dev mode - email failed)`);
-    }
+    throw err;
   }
 
-  return ApiResponse.success(res, 200, 'OTP sent to email');
+  return ApiResponse.success(res, 200, 'OTP sent to email', { verificationToken });
 }));
 
 // POST /api/auth/verify-otp
 router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
-  const { email, otp, purpose } = req.body;
+  const { email, otp, purpose, verificationToken } = req.body;
 
-  const result = await OTP.verifyOTP(email, otp, purpose || 'email_verification');
+  const result = await OTP.verifyOTP(email, otp, purpose || 'email_verification', verificationToken);
   if (!result.valid) throw new AppError(result.message, 400);
 
   if (purpose === 'email_verification') {
@@ -156,13 +158,13 @@ router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
 
 // POST /api/auth/reset-password
 router.post('/reset-password', catchAsync(async (req, res) => {
-  const { email, otp, newPassword } = req.body;
+  const { email, otp, newPassword, verificationToken } = req.body;
 
-  if (!email || !otp || !newPassword) {
-    throw new AppError('Email, OTP and password required', 400);
+  if (!email || !otp || !newPassword || !verificationToken) {
+    throw new AppError('Email, OTP, verification token and password required', 400);
   }
 
-  const result = await OTP.verifyOTP(email, otp, 'password_reset');
+  const result = await OTP.verifyOTP(email, otp, 'password_reset', verificationToken);
   if (!result.valid) throw new AppError(result.message, 400);
 
   const employee = await Employee.findOne({ email }).select('+password');
@@ -202,7 +204,7 @@ router.put('/change-password', protect, validatePasswordChange, catchAsync(async
 
 // PUT /api/auth/update-profile
 router.put('/update-profile', protect, validateUpdateProfile, catchAsync(async (req, res) => {
-  const fields = ['firstName', 'lastName', 'phone', 'address', 'emergencyContact'];
+  const fields = ['firstName', 'lastName', 'phone', 'address', 'emergencyContact', 'profilePhoto'];
   const updates = {};
   fields.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
 

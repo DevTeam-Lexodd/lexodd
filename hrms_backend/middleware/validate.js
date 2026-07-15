@@ -74,6 +74,9 @@ const validateOTP = [
   body('otp').trim().notEmpty().withMessage('OTP required')
     .isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits')
     .isNumeric().withMessage('OTP must be numbers only'),
+  body('verificationToken').trim().notEmpty().withMessage('Verification token required')
+    .isHexadecimal().withMessage('Invalid verification token')
+    .isLength({ min: 64, max: 64 }).withMessage('Invalid verification token'),
   handleValidationErrors
 ];
 
@@ -88,6 +91,8 @@ const validateUpdateProfile = [
   body('firstName').optional().trim().isLength({ max: 50 }),
   body('lastName').optional().trim().isLength({ max: 50 }),
   body('phone').optional().trim().matches(/^[6-9]\d{9}$/).withMessage('Invalid phone'),
+  body('profilePhoto').optional().isString().isLength({ max: 8 * 1024 * 1024 })
+    .matches(/^data:image\/(jpeg|jpg|png|webp);base64,/i).withMessage('Invalid profile photo'),
   handleValidationErrors
 ];
 

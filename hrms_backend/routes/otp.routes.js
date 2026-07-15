@@ -30,26 +30,24 @@ router.post('/send', validateEmail, catchAsync(async (req, res) => {
   });
   if (recent >= 3) throw new AppError('Too many requests. Wait 15 min.', 429);
 
-  const otp = await OTP.createOTP(email, purpose);
-  logger.info(`OTP [${purpose}] for ${email}: ${otp}`);
+  const { otp, verificationToken } = await OTP.createOTP(email, purpose);
 
   try {
-    await sendOTP(email, otp, purpose);
+    const emailResult = await sendOTP(email, otp, purpose);
+    if (!emailResult.success) throw new AppError('Unable to send OTP email. Please try again later.', 502);
   } catch (err) {
     logger.warn(`Email failed: ${err.message}`);
-    if (process.env.NODE_ENV === 'development') {
-      return ApiResponse.success(res, 200, `OTP: ${otp} (dev mode)`);
-    }
+    throw err;
   }
 
-  return ApiResponse.success(res, 200, 'OTP sent to email');
+  return ApiResponse.success(res, 200, 'OTP sent to email', { verificationToken });
 }));
 
 // POST /api/otp/verify
 router.post('/verify', validateOTP, catchAsync(async (req, res) => {
-  const { email, otp, purpose } = req.body;
+  const { email, otp, purpose, verificationToken } = req.body;
 
-  const result = await OTP.verifyOTP(email, otp, purpose || 'email_verification');
+  const result = await OTP.verifyOTP(email, otp, purpose || 'email_verification', verificationToken);
   if (!result.valid) throw new AppError(result.message, 400);
 
   if (purpose === 'email_verification') {

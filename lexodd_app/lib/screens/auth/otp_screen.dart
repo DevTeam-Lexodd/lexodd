@@ -13,7 +13,9 @@ class OTPScreen extends StatefulWidget {
   static const String routeName = '/otp';
   final String? email;
   final bool isPasswordReset;
-  const OTPScreen({super.key, this.email, this.isPasswordReset = false});
+  final bool isEmailVerification;
+  final String? verificationToken;
+  const OTPScreen({super.key, this.email, this.isPasswordReset = false, this.isEmailVerification = false, this.verificationToken});
   @override
   State<OTPScreen> createState() => _OTPScreenState();
 }
@@ -27,11 +29,27 @@ class _OTPScreenState extends State<OTPScreen> {
   bool _otpVerified = false;
   bool _isLoading = false;
   int _resendTimer = 60;
+  String? _verificationToken;
+
+  String get _purpose => widget.isPasswordReset
+      ? 'password_reset'
+      : widget.isEmailVerification
+          ? 'email_verification'
+          : 'login';
 
   @override
   void initState() {
     super.initState();
-    if (widget.email != null) { _emailController.text = widget.email!; _sendOTP(); }
+    if (widget.email != null) {
+      _emailController.text = widget.email!;
+    }
+    if (widget.verificationToken != null) {
+      _verificationToken = widget.verificationToken;
+      _otpSent = true;
+      _startTimer();
+    } else if (widget.email != null) {
+      _sendOTP();
+    }
   }
 
   @override
@@ -60,21 +78,30 @@ class _OTPScreenState extends State<OTPScreen> {
     if (_emailController.text.trim().isEmpty) return;
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
-    final sent = await auth.sendOTP(_emailController.text.trim(), purpose: widget.isPasswordReset ? 'password_reset' : 'login');
-    setState(() { _isLoading = false; if (sent) { _otpSent = true; _resendTimer = 60; } });
-    if (sent) { _startTimer(); _showSuccess('OTP sent to ${_emailController.text.trim()}'); }
+    final verificationToken = await auth.sendOTP(_emailController.text.trim(), purpose: _purpose);
+    setState(() { _isLoading = false; if (verificationToken != null) { _verificationToken = verificationToken; _otpSent = true; _resendTimer = 60; } });
+    if (verificationToken != null) { _startTimer(); _showSuccess('OTP sent to ${_emailController.text.trim()}'); }
     else { _showError(auth.errorMessage ?? 'Failed to send OTP'); }
   }
 
   Future<void> _verifyOTP() async {
     String otp = _otpControllers.map((c) => c.text).join();
     if (otp.length != 6) { _showError('Enter complete OTP'); return; }
+    if (_verificationToken == null) { _showError('Request a new OTP'); return; }
     setState(() => _isLoading = true);
     if (widget.isPasswordReset) {
       setState(() { _otpVerified = true; _isLoading = false; });
+    } else if (widget.isEmailVerification) {
+      final success = await context.read<AuthProvider>().verifyOTP(
+        _emailController.text.trim(), otp,
+        purpose: _purpose, verificationToken: _verificationToken!,
+      );
+      setState(() => _isLoading = false);
+      if (success && mounted) Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
+      else if (mounted) _showError(context.read<AuthProvider>().errorMessage ?? 'Invalid OTP');
     } else {
       final auth = context.read<AuthProvider>();
-      final success = await auth.loginWithOTP(_emailController.text.trim(), otp);
+      final success = await auth.loginWithOTP(_emailController.text.trim(), otp, verificationToken: _verificationToken!);
       setState(() => _isLoading = false);
       if (success && mounted) {
         Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
@@ -85,9 +112,10 @@ class _OTPScreenState extends State<OTPScreen> {
   Future<void> _resetPassword() async {
     String otp = _otpControllers.map((c) => c.text).join();
     if (_newPasswordController.text.length < 8) { _showError('Min 8 characters'); return; }
+    if (_verificationToken == null) { _showError('Request a new OTP'); return; }
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
-    final success = await auth.resetPassword(_emailController.text.trim(), otp, _newPasswordController.text);
+    final success = await auth.resetPassword(_emailController.text.trim(), otp, _newPasswordController.text, verificationToken: _verificationToken!);
     setState(() => _isLoading = false);
     if (success && mounted) { _showSuccess('Password reset! Login now.'); Navigator.pop(context); }
     else if (mounted) _showError('Reset failed');

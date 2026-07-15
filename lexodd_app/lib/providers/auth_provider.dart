@@ -28,20 +28,21 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> signup(Map<String, dynamic> data) async {
+  Future<String?> signup(Map<String, dynamic> data) async {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
     try {
-      _employee = await _authService.signup(data);
+      final result = await _authService.signup(data);
+      _employee = result.employee;
       _state = AuthState.authenticated;
       notifyListeners();
-      return true;
+      return result.verificationToken;
     } catch (e) {
       _errorMessage = e.toString();
       _state = AuthState.error;
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
@@ -62,12 +63,13 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> loginWithOTP(String email, String otp) async {
+  Future<bool> loginWithOTP(String email, String otp, {required String verificationToken}) async {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
     try {
-      await _authService.verifyOTP(email, otp, purpose: 'login');
+      await _authService.verifyOTP(email, otp,
+          purpose: 'login', verificationToken: verificationToken);
       _employee = _authService.currentEmployee;
       _state = AuthState.authenticated;
       notifyListeners();
@@ -80,9 +82,25 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> sendOTP(String email, {String purpose = 'email_verification'}) async {
+  Future<String?> sendOTP(String email, {String purpose = 'email_verification'}) async {
     try {
-      await _authService.sendOTP(email, purpose: purpose);
+      return await _authService.sendOTP(email, purpose: purpose);
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> verifyOTP(String email, String otp, {
+    required String verificationToken,
+    String purpose = 'email_verification',
+  }) async {
+    try {
+      await _authService.verifyOTP(email, otp,
+          purpose: purpose, verificationToken: verificationToken);
+      _employee = _authService.currentEmployee;
+      notifyListeners();
       return true;
     } catch (e) {
       _errorMessage = e.toString();
@@ -91,20 +109,12 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> verifyOTP(String email, String otp, {String purpose = 'email_verification'}) async {
+  Future<bool> resetPassword(String email, String otp, String newPassword, {
+    required String verificationToken,
+  }) async {
     try {
-      await _authService.verifyOTP(email, otp, purpose: purpose);
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString();
-      notifyListeners();
-      return false;
-    }
-  }
-
-  Future<bool> resetPassword(String email, String otp, String newPassword) async {
-    try {
-      return await _authService.resetPassword(email, otp, newPassword);
+      return await _authService.resetPassword(email, otp, newPassword,
+          verificationToken: verificationToken);
     } catch (e) {
       _errorMessage = e.toString();
       notifyListeners();

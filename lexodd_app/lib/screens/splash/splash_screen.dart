@@ -49,9 +49,9 @@ class _SplashScreenState extends State<SplashScreen> {
               child: const Icon(Icons.business_center_rounded, size: 50, color: AppTheme.primaryColor),
             ),
             const SizedBox(height: 24),
-            const Text('Lexodd HRMS', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700)),
+            const Text('Lexodd', style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700)),
             const SizedBox(height: 8),
-            Text('Employee Management System', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14)),
+            Text('Lexodd Hypernova System', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14)),
             const SizedBox(height: 60),
             SizedBox(
               width: 40, height: 40,
