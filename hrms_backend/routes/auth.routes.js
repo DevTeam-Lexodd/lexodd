@@ -3,6 +3,7 @@ const router = express.Router();
 
 const Employee = require('../models/Employee');
 const OTP = require('../models/OTP');
+const PendingSignup = require('../models/PendingSignup');
 const { sendOTP } = require('../utils/email');
 const ApiResponse = require('../utils/apiResponse');
 const { protect } = require('../middleware/auth');
@@ -12,8 +13,12 @@ const {
   validatePasswordChange, validateUpdateProfile, validatePasswordReset
 } = require('../middleware/validate');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
 
-// POST /api/auth/signup
+// Hash verification token for storage
+const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
+
+// POST /api/auth/signup - Store signup data, send OTP, return verificationToken
 router.post('/signup', validateSignup, catchAsync(async (req, res) => {
   const {
     firstName, lastName, email, phone, alternatePhone,
@@ -25,15 +30,27 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
     password
   } = req.body;
 
-  // Check if exists
+  // Check if employee already exists
   const existing = await Employee.findOne({ $or: [{ email }, { phone }] });
   if (existing) {
     if (existing.email === email) throw new AppError('Email already registered', 400);
     if (existing.phone === phone) throw new AppError('Phone already registered', 400);
   }
 
-  // Create employee
-  const employee = await Employee.create({
+  // Check for pending signup with same email/phone
+  const pending = await PendingSignup.findOne({ email });
+  if (pending) {
+    // Clean up old pending signup
+    await PendingSignup.deleteOne({ _id: pending._id });
+    await OTP.deleteMany({ email, purpose: 'email_verification' });
+  }
+
+  // Generate verification token
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const verificationTokenHash = hashToken(verificationToken);
+
+  // Store signup data in PendingSignup
+  const signupData = {
     firstName, lastName, email, phone, alternatePhone,
     dateOfBirth, gender, bloodGroup, maritalStatus,
     address,
@@ -43,10 +60,17 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
     workLocation, reportingManager, ctc,
     emergencyContact, bankDetails, documents, education,
     password
+  };
+
+  await PendingSignup.create({
+    verificationTokenHash,
+    data: signupData,
+    email,
+    expiresAt: new Date(Date.now() + (process.env.OTP_EXPIRY || 10) * 60 * 1000) // 10 min expiry
   });
 
-  const token = employee.getSignedJwtToken();
-  const { otp, verificationToken } = await OTP.createOTP(email, 'email_verification');
+  // Create and send OTP
+  const { otp } = await OTP.createOTP(email, 'email_verification');
 
   try {
     const emailResult = await sendOTP(email, otp, 'email_verification');
@@ -54,32 +78,19 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
       throw new AppError('Unable to send the verification email. Check the email service configuration and try again.', 502);
     }
   } catch (error) {
-    await Employee.findByIdAndDelete(employee._id);
-    await OTP.deleteMany({ email }); // don't leave orphaned OTP docs on rollback
+    await PendingSignup.deleteOne({ verificationTokenHash });
+    await OTP.deleteMany({ email, purpose: 'email_verification' });
     throw error;
   }
 
-  employee.password = undefined;
+  logger.info(`Signup initiated for: ${email}`);
 
-  logger.info(`New employee: ${employee.employeeId} - ${employee.fullName}`);
-
-  return ApiResponse.success(res, 201, 'Registration successful. A verification code was sent to your email.', {
-    token,
-    verificationToken,
-    employee: {
-      id: employee._id,
-      employeeId: employee.employeeId,
-      firstName: employee.firstName,
-      lastName: employee.lastName,
-      email: employee.email,
-      department: employee.department,
-      designation: employee.designation,
-      isEmailVerified: employee.isEmailVerified
-    }
+  return ApiResponse.success(res, 201, 'Verification code sent to your email. Please verify to complete registration.', {
+    verificationToken
   });
 }));
 
-// POST /api/auth/login
+// POST /api/auth/login - Password only login
 router.post('/login', validateLogin, catchAsync(async (req, res) => {
   const { email, password } = req.body;
 
@@ -121,11 +132,11 @@ router.post('/login', validateLogin, catchAsync(async (req, res) => {
   });
 }));
 
-// POST /api/auth/send-otp
+// POST /api/auth/send-otp - Send OTP for login or password reset
 router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
   const { email, purpose } = req.body;
-  const otpPurpose = purpose || 'email_verification';
-  const validPurposes = ['email_verification', 'password_reset', 'login'];
+  const otpPurpose = purpose || 'login'; // Default to login for OTP-based login
+  const validPurposes = ['login', 'password_reset'];
 
   if (!validPurposes.includes(otpPurpose)) {
     throw new AppError('Invalid purpose', 400);
@@ -134,9 +145,12 @@ router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
   if (otpPurpose === 'password_reset') {
     const employee = await Employee.findOne({ email });
     if (!employee) throw new NotFoundError('Account');
+  } else if (otpPurpose === 'login') {
+    const employee = await Employee.findOne({ email });
+    if (!employee) throw new NotFoundError('Account');
   }
 
-  // Rate limit: 3 per 15 min (same as /api/otp/send)
+  // Rate limit: 3 per 15 min
   const recent = await OTP.countDocuments({
     email, purpose: otpPurpose,
     createdAt: { $gt: new Date(Date.now() - 15 * 60 * 1000) }
@@ -156,15 +170,78 @@ router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
   return ApiResponse.success(res, 200, 'OTP sent to email', { verificationToken });
 }));
 
-// POST /api/auth/verify-otp
+// POST /api/auth/verify-otp - Verify OTP for signup, login, or password reset
 router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
   const { email, otp, purpose, verificationToken } = req.body;
+  const otpPurpose = purpose || 'email_verification';
 
-  const result = await OTP.verifyOTP(email, otp, purpose || 'email_verification', verificationToken);
+  const result = await OTP.verifyOTP(email, otp, otpPurpose, verificationToken);
   if (!result.valid) throw new AppError(result.message, 400);
 
-  if (purpose === 'email_verification') {
-    await Employee.findOneAndUpdate({ email }, { isEmailVerified: true });
+  if (otpPurpose === 'email_verification') {
+    // Signup flow: Create employee from pending signup data
+    const verificationTokenHash = hashToken(verificationToken);
+    const pending = await PendingSignup.findOne({ verificationTokenHash });
+
+    if (!pending) {
+      throw new AppError('Invalid or expired verification token. Please start signup again.', 400);
+    }
+
+    // Double-check email/phone not taken (race condition)
+    const existing = await Employee.findOne({ $or: [{ email: pending.data.email }, { phone: pending.data.phone }] });
+    if (existing) {
+      await PendingSignup.deleteOne({ _id: pending._id });
+      if (existing.email === pending.data.email) throw new AppError('Email already registered', 400);
+      if (existing.phone === pending.data.phone) throw new AppError('Phone already registered', 400);
+    }
+
+    // Create employee
+    const employee = await Employee.create(pending.data);
+
+    // Clean up
+    await PendingSignup.deleteOne({ _id: pending._id });
+
+    const token = employee.getSignedJwtToken();
+
+    logger.info(`New employee registered: ${employee.employeeId} - ${employee.fullName}`);
+
+    return ApiResponse.success(res, 201, 'Registration successful. Welcome!', {
+      token,
+      employee: {
+        id: employee._id,
+        employeeId: employee.employeeId,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email,
+        department: employee.department,
+        designation: employee.designation,
+        isEmailVerified: true
+      }
+    });
+  }
+
+  if (otpPurpose === 'login') {
+    // OTP Login flow
+    const employee = await Employee.findOne({ email });
+    if (!employee) throw new NotFoundError('Employee');
+    if (!employee.isActive) throw new AppError('Account deactivated', 401);
+
+    const token = employee.getSignedJwtToken();
+    logger.info(`OTP login: ${employee.employeeId}`);
+
+    return ApiResponse.success(res, 200, 'OTP verified. Login successful.', {
+      verified: true, token,
+      employee: {
+        id: employee._id, employeeId: employee.employeeId,
+        firstName: employee.firstName, lastName: employee.lastName,
+        email: employee.email, department: employee.department
+      }
+    });
+  }
+
+  if (otpPurpose === 'password_reset') {
+    // Password reset - just verify, actual reset is separate endpoint
+    return ApiResponse.success(res, 200, result.message, { verified: true });
   }
 
   return ApiResponse.success(res, 200, result.message, { verified: true });

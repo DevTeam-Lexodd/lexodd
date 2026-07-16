@@ -159,15 +159,27 @@ class _SignupScreenState extends State<SignupScreen> {
     final auth = context.read<AuthProvider>();
     final verificationToken = await auth.signup(data);
     if (verificationToken != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Registration successful!'),
-          backgroundColor: AppTheme.successColor));
-      Navigator.of(context).pushReplacement(MaterialPageRoute(
-        builder: (_) => OTPScreen(email: _email.text.trim(), isEmailVerification: true, verificationToken: verificationToken),
-      ));
+      // Show OTP verification dialog
+      _showOTPDialog(_email.text.trim(), verificationToken);
     } else if (mounted) {
       _showError(auth.errorMessage ?? 'Registration failed');
     }
+  }
+
+  void _showOTPDialog(String email, String verificationToken) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => OTPScreen(
+        email: email,
+        isEmailVerification: true,
+        verificationToken: verificationToken,
+        onVerified: () {
+          Navigator.of(dialogContext).pop(); // Close dialog
+          Navigator.of(context).pushReplacementNamed('/home'); // Navigate to home
+        },
+      ),
+    );
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -253,23 +265,23 @@ class _SignupScreenState extends State<SignupScreen> {
     return Expanded(
         child: Column(children: [
       Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: done
-                  ? AppTheme.successColor
-                  : active
-                      ? AppTheme.primaryColor
-                      : Colors.grey.shade300),
-          child: Center(
-              child: done
-                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                  : Text('${i + 1}',
-                      style: TextStyle(
-                          color: active ? Colors.white : AppTheme.textSecondary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12)))),
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: done
+                ? AppTheme.successColor
+                : active
+                    ? AppTheme.primaryColor
+                    : Colors.grey.shade300),
+        child: Center(
+            child: done
+                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                : Text('${i + 1}',
+                    style: TextStyle(
+                        color: active ? Colors.white : AppTheme.textSecondary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12)))),
       const SizedBox(height: 4),
       Text(label,
           style: TextStyle(

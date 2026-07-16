@@ -21,7 +21,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
-  bool _useOTPLogin = false;
 
   @override
   void dispose() {
@@ -38,13 +37,6 @@ class _LoginScreenState extends State<LoginScreen> {
       Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
     } else if (mounted) {
       _showError(auth.errorMessage ?? 'Login failed');
-    }
-  }
-
-  Future<void> _handleOTPLogin() async {
-    if (_emailController.text.trim().isEmpty) { _showError('Enter your email'); return; }
-    if (mounted) {
-      Navigator.of(context).push(MaterialPageRoute(builder: (_) => OTPScreen(email: _emailController.text.trim())));
     }
   }
 
@@ -79,50 +71,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   const SizedBox(height: 8),
                   const Text('Sign in to continue', style: TextStyle(color: AppTheme.textSecondary)),
                   const SizedBox(height: 40),
-                  // Toggle
-                  Container(
-                    decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12)),
-                    child: Row(children: [
-                      Expanded(child: GestureDetector(
-                        onTap: () => setState(() => _useOTPLogin = false),
-                        child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(color: !_useOTPLogin ? AppTheme.primaryColor : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-                          child: Center(child: Text('Password', style: TextStyle(color: !_useOTPLogin ? Colors.white : AppTheme.textSecondary, fontWeight: FontWeight.w600)))),
-                      )),
-                      Expanded(child: GestureDetector(
-                        onTap: () => setState(() => _useOTPLogin = true),
-                        child: Container(padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(color: _useOTPLogin ? AppTheme.primaryColor : Colors.transparent, borderRadius: BorderRadius.circular(12)),
-                          child: Center(child: Text('OTP', style: TextStyle(color: _useOTPLogin ? Colors.white : AppTheme.textSecondary, fontWeight: FontWeight.w600)))),
-                      )),
-                    ]),
-                  ),
-                  const SizedBox(height: 32),
                   // Email
                   CustomTextField(controller: _emailController, label: 'Email', hint: 'Enter your email',
                     prefixIcon: Iconsax.sms, keyboardType: TextInputType.emailAddress,
                     validator: (v) { if (v == null || v.isEmpty) return 'Required'; if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(v)) return 'Invalid email'; return null; }),
                   const SizedBox(height: 16),
                   // Password
-                  if (!_useOTPLogin)
-                    CustomTextField(controller: _passwordController, label: 'Password', hint: 'Enter password',
-                      prefixIcon: Iconsax.lock, obscureText: _obscurePassword,
-                      suffixIcon: IconButton(icon: Icon(_obscurePassword ? Iconsax.eye_slash : Iconsax.eye, color: AppTheme.textHint),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword)),
-                      validator: (v) { if (!_useOTPLogin && (v == null || v.isEmpty)) return 'Required'; return null; }),
-                  if (!_useOTPLogin)
-                    Align(alignment: Alignment.centerRight,
-                      child: TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OTPScreen(isPasswordReset: true))),
-                        child: const Text('Forgot Password?', style: TextStyle(color: AppTheme.primaryColor)))),
+                  CustomTextField(controller: _passwordController, label: 'Password', hint: 'Enter password',
+                    prefixIcon: Iconsax.lock, obscureText: _obscurePassword,
+                    suffixIcon: IconButton(icon: Icon(_obscurePassword ? Iconsax.eye_slash : Iconsax.eye, color: AppTheme.textHint),
+                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword)),
+                    validator: (v) { if (v == null || v.isEmpty) return 'Required'; return null; }),
+                  Align(alignment: Alignment.centerRight,
+                    child: TextButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const OTPScreen(isPasswordReset: true))),
+                      child: const Text('Forgot Password?', style: TextStyle(color: AppTheme.primaryColor)))),
                   const SizedBox(height: 24),
-                  CustomButton(text: _useOTPLogin ? 'Send OTP' : 'Sign In', isLoading: auth.isLoading,
-                    onPressed: _useOTPLogin ? _handleOTPLogin : _handleLogin),
-                  const SizedBox(height: 32),
-                  Row(children: [
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                    const Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: Text('OR', style: TextStyle(color: AppTheme.textHint))),
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                  ]),
+                  CustomButton(text: 'Sign In', isLoading: auth.isLoading, onPressed: _handleLogin),
                   const SizedBox(height: 32),
                   Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     const Text("Don't have an account? ", style: TextStyle(color: AppTheme.textSecondary)),

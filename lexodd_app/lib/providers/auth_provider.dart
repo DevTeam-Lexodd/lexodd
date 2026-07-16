@@ -28,16 +28,17 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Signup: returns verificationToken (employee created after OTP verification)
   Future<String?> signup(Map<String, dynamic> data) async {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
     try {
-      final result = await _authService.signup(data);
-      _employee = result.employee;
-      _state = AuthState.authenticated;
+      final verificationToken = await _authService.signup(data);
+      // Don't set authenticated state yet - wait for OTP verification
+      _state = AuthState.unauthenticated;
       notifyListeners();
-      return result.verificationToken;
+      return verificationToken;
     } catch (e) {
       _errorMessage = e.toString();
       _state = AuthState.error;
@@ -46,6 +47,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // Password login
   Future<bool> login(String email, String password) async {
     _state = AuthState.loading;
     _errorMessage = null;
@@ -63,6 +65,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // OTP Login
   Future<bool> loginWithOTP(String email, String otp, {required String verificationToken}) async {
     _state = AuthState.loading;
     _errorMessage = null;
@@ -82,7 +85,8 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> sendOTP(String email, {String purpose = 'email_verification'}) async {
+  // Send OTP for login or password reset
+  Future<String?> sendOTP(String email, {String purpose = 'login'}) async {
     try {
       return await _authService.sendOTP(email, purpose: purpose);
     } catch (e) {
@@ -92,6 +96,7 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // Verify OTP for signup (email_verification), login, or password_reset
   Future<bool> verifyOTP(String email, String otp, {
     required String verificationToken,
     String purpose = 'email_verification',
@@ -100,6 +105,9 @@ class AuthProvider extends ChangeNotifier {
       await _authService.verifyOTP(email, otp,
           purpose: purpose, verificationToken: verificationToken);
       _employee = _authService.currentEmployee;
+      if (purpose == 'email_verification' || purpose == 'login') {
+        _state = AuthState.authenticated;
+      }
       notifyListeners();
       return true;
     } catch (e) {

@@ -15,7 +15,17 @@ class OTPScreen extends StatefulWidget {
   final bool isPasswordReset;
   final bool isEmailVerification;
   final String? verificationToken;
-  const OTPScreen({super.key, this.email, this.isPasswordReset = false, this.isEmailVerification = false, this.verificationToken});
+  final VoidCallback? onVerified; // Callback when verification succeeds
+
+  const OTPScreen({
+    super.key,
+    this.email,
+    this.isPasswordReset = false,
+    this.isEmailVerification = false,
+    this.verificationToken,
+    this.onVerified,
+  });
+
   @override
   State<OTPScreen> createState() => _OTPScreenState();
 }
@@ -92,21 +102,22 @@ class _OTPScreenState extends State<OTPScreen> {
     if (otp.length != 6) { _showError('Enter complete OTP'); return; }
     if (_verificationToken == null) { _showError('Request a new OTP'); return; }
     setState(() => _isLoading = true);
-    if (widget.isEmailVerification) {
-      final success = await context.read<AuthProvider>().verifyOTP(
-        _emailController.text.trim(), otp,
-        purpose: _purpose, verificationToken: _verificationToken!,
-      );
-      setState(() => _isLoading = false);
-      if (success && mounted) Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
-      else if (mounted) _showError(context.read<AuthProvider>().errorMessage ?? 'Invalid OTP');
-    } else {
-      final auth = context.read<AuthProvider>();
-      final success = await auth.loginWithOTP(_emailController.text.trim(), otp, verificationToken: _verificationToken!);
-      setState(() => _isLoading = false);
-      if (success && mounted) {
+    final auth = context.read<AuthProvider>();
+    final success = await auth.verifyOTP(
+      _emailController.text.trim(), otp,
+      purpose: _purpose, verificationToken: _verificationToken!,
+    );
+    setState(() => _isLoading = false);
+    if (success && mounted) {
+      // Call the callback if provided (for dialog usage)
+      if (widget.onVerified != null) {
+        widget.onVerified!();
+      } else {
+        // Navigate to home screen for standalone page usage
         Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
-      } else if (mounted) _showError(auth.errorMessage ?? 'Invalid OTP');
+      }
+    } else if (mounted) {
+      _showError(auth.errorMessage ?? 'Invalid OTP');
     }
   }
 
@@ -133,56 +144,77 @@ class _OTPScreenState extends State<OTPScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(leading: IconButton(icon: const Icon(Iconsax.arrow_left), onPressed: () => Navigator.pop(context))),
-      body: Container(
-        width: double.infinity, height: double.infinity,
-        decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF5F7FA), Color(0xFFE8ECF4)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(children: [
-            const SizedBox(height: 20),
-            Container(width: 80, height: 80, decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
-              child: Icon(widget.isPasswordReset ? Iconsax.lock : Iconsax.sms, size: 40, color: AppTheme.primaryColor)),
+    final isDialog = widget.onVerified != null;
+    
+    return isDialog
+        ? Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 400),
+              child: _buildContent(),
+            ),
+          )
+        : Scaffold(
+            appBar: AppBar(leading: IconButton(icon: const Icon(Iconsax.arrow_left), onPressed: () => Navigator.pop(context))),
+            body: Container(
+              width: double.infinity, height: double.infinity,
+              decoration: const BoxDecoration(gradient: LinearGradient(colors: [Color(0xFFF5F7FA), Color(0xFFE8ECF4)], begin: Alignment.topCenter, end: Alignment.bottomCenter)),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _buildContent(),
+              ),
+            ),
+          );
+  }
+
+  Widget _buildContent() {
+    final isDialog = widget.onVerified != null;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (!isDialog) const SizedBox(height: 20),
+          Container(width: 80, height: 80, decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(20)),
+            child: Icon(widget.isPasswordReset ? Iconsax.lock : Iconsax.sms, size: 40, color: AppTheme.primaryColor)),
+          const SizedBox(height: 24),
+          Text(widget.isPasswordReset ? 'Reset Password' : 'OTP Verification', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          Text(!_otpSent ? 'Enter your email to receive OTP' : 'Enter code sent to\n${_emailController.text}', textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 40),
+          if (!_otpSent) ...[
+            TextFormField(controller: _emailController, keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(labelText: 'Email', prefixIcon: const Icon(Iconsax.sms), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
             const SizedBox(height: 24),
-            Text(widget.isPasswordReset ? 'Reset Password' : 'OTP Verification', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 12),
-            Text(!_otpSent ? 'Enter your email to receive OTP' : 'Enter code sent to\n${_emailController.text}', textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textSecondary)),
-            const SizedBox(height: 40),
-            if (!_otpSent) ...[
-              TextFormField(controller: _emailController, keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(labelText: 'Email', prefixIcon: const Icon(Iconsax.sms), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
+            CustomButton(text: 'Send OTP', isLoading: _isLoading, onPressed: _sendOTP),
+          ] else if (_otpSent) ...[
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(6, (i) => Container(
+              width: 48, height: 56, margin: const EdgeInsets.symmetric(horizontal: 4),
+              child: TextFormField(controller: _otpControllers[i], focusNode: _otpFocusNodes[i],
+                keyboardType: TextInputType.number, textAlign: TextAlign.center, maxLength: 1,
+                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
+                decoration: InputDecoration(counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2))),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: (v) { if (v.isNotEmpty && i < 5) {
+                  _otpFocusNodes[i + 1].requestFocus();
+                } else if (v.isEmpty && i > 0) _otpFocusNodes[i - 1].requestFocus(); }),
+            ))),
+            if (widget.isPasswordReset) ...[
               const SizedBox(height: 24),
-              CustomButton(text: 'Send OTP', isLoading: _isLoading, onPressed: _sendOTP),
-            ] else if (_otpSent) ...[
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(6, (i) => Container(
-                width: 48, height: 56, margin: const EdgeInsets.symmetric(horizontal: 4),
-                child: TextFormField(controller: _otpControllers[i], focusNode: _otpFocusNodes[i],
-                  keyboardType: TextInputType.number, textAlign: TextAlign.center, maxLength: 1,
-                  style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700),
-                  decoration: InputDecoration(counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppTheme.primaryColor, width: 2))),
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  onChanged: (v) { if (v.isNotEmpty && i < 5) {
-                    _otpFocusNodes[i + 1].requestFocus();
-                  } else if (v.isEmpty && i > 0) _otpFocusNodes[i - 1].requestFocus(); }),
-              ))),
-              if (widget.isPasswordReset) ...[
-                const SizedBox(height: 24),
-                TextFormField(controller: _newPasswordController, obscureText: true,
-                  decoration: InputDecoration(labelText: 'New Password', hintText: 'Min 8 chars, upper, lower & number', prefixIcon: const Icon(Iconsax.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
-              ],
-              const SizedBox(height: 24),
-              _resendTimer > 0 ? Text('Resend in ${_resendTimer}s', style: const TextStyle(color: AppTheme.textSecondary))
-                : TextButton(onPressed: () { setState(() => _resendTimer = 60); _sendOTP(); }, child: const Text('Resend OTP', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w600))),
-              const SizedBox(height: 24),
-              CustomButton(
-                text: widget.isPasswordReset ? 'Reset Password' : 'Verify OTP',
-                isLoading: _isLoading,
-                onPressed: widget.isPasswordReset ? _resetPassword : _verifyOTP),
+              TextFormField(controller: _newPasswordController, obscureText: true,
+                decoration: InputDecoration(labelText: 'New Password', hintText: 'Min 8 chars, upper, lower & number', prefixIcon: const Icon(Iconsax.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
             ],
-          ]),
-        ),
+            const SizedBox(height: 24),
+            _resendTimer > 0 ? Text('Resend in ${_resendTimer}s', style: const TextStyle(color: AppTheme.textSecondary))
+              : TextButton(onPressed: () { setState(() => _resendTimer = 60); _sendOTP(); }, child: const Text('Resend OTP', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w600))),
+            const SizedBox(height: 24),
+            CustomButton(
+              text: widget.isPasswordReset ? 'Reset Password' : 'Verify OTP',
+              isLoading: _isLoading,
+              onPressed: widget.isPasswordReset ? _resetPassword : _verifyOTP),
+          ],
+        ],
       ),
     );
   }
