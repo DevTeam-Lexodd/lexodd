@@ -20,18 +20,15 @@ class AuthService {
   }
 
   // SIGNUP - POST /api/auth/signup
-  Future<SignupResult> signup(Map<String, dynamic> data) async {
+  // Returns verificationToken only (employee created after OTP verification)
+  Future<String> signup(Map<String, dynamic> data) async {
     final response = await _api.post('/auth/signup', body: data);
     if (response['success'] == true) {
-      await _api.setToken(response['data']['token']);
-      final profile = await getProfile();
-      _currentEmployee = profile;
-      await _saveEmployeeLocally(profile);
       final verificationToken = response['data']?['verificationToken'] as String?;
       if (verificationToken == null || verificationToken.isEmpty) {
-        throw ApiException('Registration succeeded, but no verification token was returned.');
+        throw ApiException('Registration initiated, but no verification token was returned.');
       }
-      return SignupResult(employee: profile, verificationToken: verificationToken);
+      return verificationToken;
     }
     throw ApiException(response['message'] ?? 'Signup failed');
   }
@@ -49,36 +46,43 @@ class AuthService {
     throw ApiException(response['message'] ?? 'Login failed');
   }
 
-  // SEND OTP - POST /api/otp/send
-  Future<String> sendOTP(String email, {String purpose = 'email_verification'}) async {
-    final response = await _api.post('/otp/send', body: {'email': email, 'purpose': purpose});
+  // SEND OTP - POST /api/auth/send-otp (for login or password reset)
+  Future<String> sendOTP(String email, {String purpose = 'login'}) async {
+    final response = await _api.post('/auth/send-otp', body: {'email': email, 'purpose': purpose});
     if (response['success'] != true || response['data']?['verificationToken'] == null) {
       throw ApiException(response['message'] ?? 'Failed to send OTP');
     }
     return response['data']['verificationToken'] as String;
   }
 
-  // VERIFY OTP - POST /api/otp/verify
+  // VERIFY OTP - POST /api/auth/verify-otp
+  // For email_verification: creates employee, returns token + employee
+  // For login: returns token + employee
+  // For password_reset: returns verified: true
   Future<Map<String, dynamic>> verifyOTP(String email, String otp, {
     required String verificationToken,
     String purpose = 'email_verification',
   }) async {
-    final response = await _api.post('/otp/verify', body: {
+    final response = await _api.post('/auth/verify-otp', body: {
       'email': email,
       'otp': otp,
       'purpose': purpose,
       'verificationToken': verificationToken,
     });
     if (response['success'] == true) {
-      // Login OTP returns a fresh session token. Email verification refreshes
-      // the signed-in profile so the verified state is stored locally.
-      if (response['data']?['token'] != null) {
-        await _api.setToken(response['data']['token']);
-      }
-      if (_currentEmployee != null || response['data']?['token'] != null) {
+      final data = response['data'] ?? {};
+      
+      // If token returned (signup verification or OTP login), store it and fetch profile
+      if (data['token'] != null) {
+        await _api.setToken(data['token']);
+        final profile = await getProfile();
+        _currentEmployee = profile;
+        await _saveEmployeeLocally(profile);
+      } else if (_currentEmployee != null) {
+        // For password reset, just refresh profile
         await getProfile();
       }
-      return response['data'] ?? {};
+      return data;
     }
     throw ApiException(response['message'] ?? 'OTP verification failed');
   }
@@ -140,11 +144,4 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(AppConstants.employeeKey, jsonEncode(employee.toJson()));
   }
-}
-
-class SignupResult {
-  final Employee employee;
-  final String verificationToken;
-
-  const SignupResult({required this.employee, required this.verificationToken});
 }

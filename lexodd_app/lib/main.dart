@@ -6,6 +6,7 @@ import 'providers/auth_provider.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/signup_screen.dart';
+import 'screens/auth/otp_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/profile/profile_screen.dart';
 
@@ -34,6 +35,7 @@ class MyApp extends StatelessWidget {
           SplashScreen.routeName: (_) => const SplashScreen(),
           LoginScreen.routeName: (_) => const LoginScreen(),
           SignupScreen.routeName: (_) => const SignupScreen(),
+          OTPScreen.routeName: (_) => const OTPScreen(),
           HomeScreen.routeName: (_) => const HomeScreen(),
           ProfileScreen.routeName: (_) => const ProfileScreen(),
         },
