@@ -40,10 +40,12 @@ class _DashboardTabState extends State<DashboardTab> {
         });
       }
     } catch (e) {
-      if (mounted) setState(() {
+      if (mounted) {
+        setState(() {
         _loading = false;
         _loadFailed = true;
       });
+      }
     }
   }
 

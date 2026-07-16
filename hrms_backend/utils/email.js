@@ -89,6 +89,7 @@ async function sendOTP(email, otp, purpose) {
 </body>
 </html>`;
 
+console.log(`Sending OTP email to ${email} for purpose: ${purpose}`);
   return await sendEmail(email, subjects[purpose] || 'OTP Verification', html);
 }
 
