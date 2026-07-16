@@ -338,10 +338,19 @@ class _LeaveScreenState extends State<LeaveScreen> {
                                 if (leaveType == null ||
                                     startDate == null ||
                                     endDate == null ||
-                                    reasonCtrl.text.isEmpty) {
+                                    reasonCtrl.text.trim().isEmpty) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                           content: Text('Fill all fields'),
+                                          backgroundColor:
+                                              AppTheme.errorColor));
+                                  return;
+                                }
+                                if (reasonCtrl.text.trim().length < 5) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                          content: Text(
+                                              'Reason must be at least 5 characters'),
                                           backgroundColor:
                                               AppTheme.errorColor));
                                   return;
@@ -354,7 +363,7 @@ class _LeaveScreenState extends State<LeaveScreen> {
                                     'leaveType': leaveType,
                                     'startDate': startDate!.toIso8601String(),
                                     'endDate': endDate!.toIso8601String(),
-                                    'reason': reasonCtrl.text
+                                    'reason': reasonCtrl.text.trim()
                                   });
                                   Navigator.pop(context);
                                   _load();

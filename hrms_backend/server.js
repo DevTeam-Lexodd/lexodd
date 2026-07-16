@@ -9,6 +9,18 @@ require('dotenv').config();
 const logger = require('./utils/logger');
 const errorHandler = require('./middleware/errorHandler');
 
+// Fail fast on missing critical configuration
+const requiredEnv = ['MONGODB_URI', 'JWT_SECRET'];
+const missingEnv = requiredEnv.filter(key => !process.env[key]);
+if (missingEnv.length > 0) {
+  console.error(`FATAL: Missing required environment variables: ${missingEnv.join(', ')}`);
+  console.error('See .env.example for the full list of configuration options.');
+  process.exit(1);
+}
+['BREVO_API_KEY', 'BREVO_SENDER_EMAIL'].forEach(key => {
+  if (!process.env[key]) console.warn(`WARN: ${key} not set - OTP emails will fail until it is configured.`);
+});
+
 // Import Routes
 const authRoutes = require('./routes/auth.routes');
 const employeeRoutes = require('./routes/employee.routes');
@@ -48,7 +60,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // Logging
-app.use(morgan('dev'));
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Routes
 app.get('/api/health', (req, res) => {

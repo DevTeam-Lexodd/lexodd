@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
 import '../../config/theme.dart';
 import '../../models/employee.dart';
+import '../../services/api_service.dart';
 import '../../services/employee_service.dart';
 import '../profile/profile_screen.dart';
 
@@ -16,6 +17,8 @@ class _EmployeesTabState extends State<EmployeesTab> {
   final _searchController = TextEditingController();
   List<Employee> _employees = [];
   bool _loading = true;
+  bool _forbidden = false;
+  String? _error;
   String? _selectedDept;
   int _total = 0;
 
@@ -42,10 +45,19 @@ class _EmployeesTabState extends State<EmployeesTab> {
           _employees = result['employees'];
           _total = result['pagination']['total'];
           _loading = false;
+          _forbidden = false;
+          _error = null;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          // Directory is restricted to hr / admin / manager on the backend
+          _forbidden = e is ApiException && e.statusCode == 403;
+          _error = _forbidden ? null : e.toString();
+        });
+      }
     }
   }
 
@@ -94,7 +106,47 @@ class _EmployeesTabState extends State<EmployeesTab> {
         Expanded(
             child: _loading
                 ? const Center(child: CircularProgressIndicator())
-                : _employees.isEmpty
+                : _forbidden
+                    ? Center(
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                            Icon(Iconsax.lock,
+                                size: 64, color: Colors.grey.shade300),
+                            const SizedBox(height: 16),
+                            const Text('Team directory',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 15)),
+                            const SizedBox(height: 6),
+                            const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 40),
+                                child: Text(
+                                    'The employee directory is only available to managers and HR.',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                        color: AppTheme.textSecondary,
+                                        fontSize: 12))),
+                          ]))
+                    : _error != null
+                        ? Center(
+                            child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                Icon(Iconsax.info_circle,
+                                    size: 64, color: Colors.grey.shade300),
+                                const SizedBox(height: 16),
+                                const Text('Could not load employees',
+                                    style:
+                                        TextStyle(fontWeight: FontWeight.w600)),
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                    onPressed: () {
+                                      setState(() => _loading = true);
+                                      _load(refresh: true);
+                                    },
+                                    child: const Text('Retry')),
+                              ]))
+                    : _employees.isEmpty
                     ? Center(
                         child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,

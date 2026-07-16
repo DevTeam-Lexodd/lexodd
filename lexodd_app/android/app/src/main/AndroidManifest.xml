@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Needed in release builds (debug gets it from the debug manifest) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Camera is optional - profile photo capture, not a hard requirement -->
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <application
         android:label="lexood"
         android:name="${applicationName}"

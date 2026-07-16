@@ -139,6 +139,3 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 }
-
-
-//in this give a option that employee can add there profile pic through using uploading pic from gallery or using camera and that should store in my database create that also in backend and i saw a blunder that after signup the next thing is verfiy otp email is alerady feteched from the signup from but the screen shows only email and send otp and otp is sent to that particular email but where that otp will be verify where the otp screen coming up?? and and one more thing after sending the otp to the email/outlook why it is not coming in inbox of the given email?? first given process after my command contiune to create or fix that

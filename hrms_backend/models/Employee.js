@@ -2,6 +2,10 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
+// Atomic counter collection - prevents duplicate employeeId race conditions
+const counterSchema = new mongoose.Schema({ _id: String, seq: { type: Number, default: 0 } });
+const Counter = mongoose.models.Counter || mongoose.model('Counter', counterSchema);
+
 const employeeSchema = new mongoose.Schema({
   // Personal Info
   employeeId: { type: String, unique: true, sparse: true },
@@ -132,13 +136,17 @@ employeeSchema.pre('save', async function(next) {
   next();
 });
 
-// Generate employee ID
+// Generate employee ID (atomic - no race conditions under concurrent signups)
 employeeSchema.pre('save', async function(next) {
   if (this.employeeId) return next();
-  const count = await mongoose.model('Employee').countDocuments();
   const year = new Date().getFullYear().toString().slice(-2);
   const month = (new Date().getMonth() + 1).toString().padStart(2, '0');
-  this.employeeId = `EMP${year}${month}${(count + 1).toString().padStart(4, '0')}`;
+  const counter = await Counter.findOneAndUpdate(
+    { _id: `employee-${year}${month}` },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  this.employeeId = `EMP${year}${month}${counter.seq.toString().padStart(4, '0')}`;
   next();
 });
 
@@ -158,7 +166,7 @@ employeeSchema.methods.getSignedJwtToken = function() {
   return jwt.sign(
     { id: this._id, role: this.role, email: this.email },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRE }
+    { expiresIn: process.env.JWT_EXPIRE || '30d' }
   );
 };
 

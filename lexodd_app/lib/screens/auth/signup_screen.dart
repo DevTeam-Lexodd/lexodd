@@ -99,12 +99,14 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  Future<void> _selectDate(TextEditingController ctrl) async {
+  Future<void> _selectDate(TextEditingController ctrl, {bool isDob = false}) async {
+    final now = DateTime.now();
     final date = await showDatePicker(
         context: context,
-        initialDate: DateTime.now(),
+        initialDate: isDob ? DateTime(now.year - 25, now.month, now.day) : now,
         firstDate: DateTime(1950),
-        lastDate: DateTime.now());
+        // Backend requires employees to be at least 18 years old
+        lastDate: isDob ? DateTime(now.year - 18, now.month, now.day) : now);
     if (date != null) ctrl.text = DateFormat('yyyy-MM-dd').format(date);
   }
 
@@ -170,6 +172,14 @@ class _SignupScreenState extends State<SignupScreen> {
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppTheme.errorColor));
+
+  // Matches the backend rule: 2-50 chars, letters/spaces/'/- only
+  String? _nameValidator(String? v) {
+    if (v == null || v.trim().isEmpty) return 'Required';
+    if (v.trim().length < 2) return 'Min 2 characters';
+    if (!RegExp(r"^[a-zA-Z\s'-]+$").hasMatch(v.trim())) return 'Letters only';
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -288,14 +298,14 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _first,
                         label: 'First Name *',
                         hint: 'John',
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: _nameValidator)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: CustomTextField(
                         controller: _last,
                         label: 'Last Name *',
                         hint: 'Doe',
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: _nameValidator)),
               ]),
               const SizedBox(height: 16),
               CustomTextField(
@@ -331,7 +341,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   hint: 'Select date',
                   prefixIcon: Iconsax.calendar,
                   readOnly: true,
-                  onTap: () => _selectDate(_dob),
+                  onTap: () => _selectDate(_dob, isDob: true),
                   validator: (v) => v!.isEmpty ? 'Required' : null),
               const SizedBox(height: 16),
               _dropdown('Gender *', _gender, AppConstants.genderOptions,

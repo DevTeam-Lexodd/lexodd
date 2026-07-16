@@ -122,6 +122,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // Refresh the signed-in profile from the server
+  Future<bool> refreshProfile() async {
+    try {
+      _employee = await _authService.getProfile();
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = e.toString();
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<bool> updateProfile(Map<String, dynamic> data) async {
     try {
       _employee = await _authService.updateProfile(data);

@@ -80,6 +80,21 @@ const validateOTP = [
   handleValidationErrors
 ];
 
+// Password Reset Validation (OTP + token + new password in one request)
+const validatePasswordReset = [
+  body('email').trim().notEmpty().withMessage('Email required').isEmail().withMessage('Invalid email').normalizeEmail(),
+  body('otp').trim().notEmpty().withMessage('OTP required')
+    .isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits')
+    .isNumeric().withMessage('OTP must be numbers only'),
+  body('verificationToken').trim().notEmpty().withMessage('Verification token required')
+    .isHexadecimal().withMessage('Invalid verification token')
+    .isLength({ min: 64, max: 64 }).withMessage('Invalid verification token'),
+  body('newPassword').notEmpty().withMessage('New password required')
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase and number'),
+  handleValidationErrors
+];
+
 // Email Validation
 const validateEmail = [
   body('email').trim().notEmpty().withMessage('Email required').isEmail().withMessage('Invalid email').normalizeEmail(),
@@ -134,6 +149,7 @@ module.exports = {
   validateSignup,
   validateLogin,
   validateOTP,
+  validatePasswordReset,
   validateEmail,
   validateUpdateProfile,
   validatePasswordChange,
