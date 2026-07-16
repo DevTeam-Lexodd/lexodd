@@ -19,7 +19,11 @@ const leaveSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 leaveSchema.pre('save', function(next) {
-  if (this.endDate < this.startDate) return next(new Error('End date must be after start date'));
+  if (this.endDate < this.startDate) {
+    // Produces a Mongoose ValidationError -> surfaced as a 400, not a 500
+    this.invalidate('endDate', 'End date must be on or after start date');
+    return next(new mongoose.Error.ValidationError(this));
+  }
   if (this.isHalfDay) {
     this.numberOfDays = 0.5;
   } else {

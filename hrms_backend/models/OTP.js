@@ -22,7 +22,15 @@ otpSchema.statics.generateVerificationToken = function() {
 };
 
 otpSchema.statics.hashValue = function(value) {
-  return crypto.createHash('sha256').update(value).digest('hex');
+  return crypto.createHash('sha256').update(String(value)).digest('hex');
+};
+
+// timingSafeEqual throws on unequal-length buffers - compare safely instead
+otpSchema.statics.safeEqual = function(hexA, hexB) {
+  const a = Buffer.from(hexA, 'hex');
+  const b = Buffer.from(hexB, 'hex');
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 };
 
 otpSchema.statics.createOTP = async function(email, purpose) {
@@ -40,6 +48,10 @@ otpSchema.statics.createOTP = async function(email, purpose) {
 };
 
 otpSchema.statics.verifyOTP = async function(email, otp, purpose, verificationToken) {
+  if (!otp || !verificationToken) {
+    return { valid: false, message: 'OTP and verification token are required.' };
+  }
+
   const otpDoc = await this.findOne({
     email, purpose, isUsed: false,
     expiresAt: { $gt: new Date() }
@@ -54,14 +66,8 @@ otpSchema.statics.verifyOTP = async function(email, otp, purpose, verificationTo
     return { valid: false, message: 'Max attempts exceeded. Request a new OTP.' };
   }
 
-  const isOtpValid = crypto.timingSafeEqual(
-    Buffer.from(otpDoc.otpHash, 'hex'),
-    Buffer.from(this.hashValue(otp), 'hex')
-  );
-  const isTokenValid = crypto.timingSafeEqual(
-    Buffer.from(otpDoc.verificationTokenHash, 'hex'),
-    Buffer.from(this.hashValue(verificationToken), 'hex')
-  );
+  const isOtpValid = this.safeEqual(otpDoc.otpHash, this.hashValue(otp));
+  const isTokenValid = this.safeEqual(otpDoc.verificationTokenHash, this.hashValue(verificationToken));
 
   if (!isOtpValid || !isTokenValid) {
     otpDoc.attempts += 1;

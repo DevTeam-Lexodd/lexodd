@@ -90,7 +90,15 @@ class ApiService {
   }
 
   dynamic _handleResponse(http.Response response) {
-    final body = jsonDecode(response.body);
+    dynamic body;
+    try {
+      body = jsonDecode(response.body);
+    } catch (_) {
+      // Non-JSON body (proxy error page, HTML rate-limit page, empty body, ...)
+      throw ApiException(
+          'Unexpected server response (${response.statusCode}). Please try again.',
+          statusCode: response.statusCode);
+    }
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;
     } else {

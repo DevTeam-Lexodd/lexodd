@@ -20,6 +20,7 @@ class _DashboardTabState extends State<DashboardTab> {
   final EmployeeService _service = EmployeeService();
   DashboardData? _data;
   bool _loading = true;
+  bool _loadFailed = false;
   int _carouselIndex = 0;
 
   @override
@@ -35,10 +36,14 @@ class _DashboardTabState extends State<DashboardTab> {
         setState(() {
           _data = data;
           _loading = false;
+          _loadFailed = false;
         });
       }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() {
+        _loading = false;
+        _loadFailed = true;
+      });
     }
   }
 
@@ -245,6 +250,32 @@ class _DashboardTabState extends State<DashboardTab> {
       return const Center(
           child: Padding(
               padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
+    }
+    if (_loadFailed && _data == null) {
+      return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                  color: Colors.white, borderRadius: BorderRadius.circular(16)),
+              child: Column(children: [
+                const Icon(Iconsax.info_circle,
+                    size: 40, color: AppTheme.warningColor),
+                const SizedBox(height: 8),
+                const Text('Could not load overview',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                    onPressed: () {
+                      setState(() {
+                        _loading = true;
+                        _loadFailed = false;
+                      });
+                      _load();
+                    },
+                    child: const Text('Retry')),
+              ])));
     }
     return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),

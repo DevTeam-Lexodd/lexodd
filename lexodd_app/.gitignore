@@ -8,6 +8,10 @@ build/
 .idea/
 .vscode/
 
+# Stray tooling (this is a Flutter project, not a Node one)
+node_modules/
+.DS_Store
+
 # Android
 android/.gradle
 android/captures

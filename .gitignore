@@ -1,0 +1,16 @@
+# Root-level ignores (per-project .gitignore files still apply)
+
+# Dependencies
+node_modules/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Env / secrets
+.env
+*.log

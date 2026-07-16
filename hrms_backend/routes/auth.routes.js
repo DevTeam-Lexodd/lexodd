@@ -9,7 +9,7 @@ const { protect } = require('../middleware/auth');
 const { catchAsync, AppError, AuthenticationError, NotFoundError } = require('../middleware/errorHandler');
 const {
   validateSignup, validateLogin, validateOTP, validateEmail,
-  validatePasswordChange, validateUpdateProfile
+  validatePasswordChange, validateUpdateProfile, validatePasswordReset
 } = require('../middleware/validate');
 const logger = require('../utils/logger');
 
@@ -55,6 +55,7 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
     }
   } catch (error) {
     await Employee.findByIdAndDelete(employee._id);
+    await OTP.deleteMany({ email }); // don't leave orphaned OTP docs on rollback
     throw error;
   }
 
@@ -123,16 +124,29 @@ router.post('/login', validateLogin, catchAsync(async (req, res) => {
 // POST /api/auth/send-otp
 router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
   const { email, purpose } = req.body;
+  const otpPurpose = purpose || 'email_verification';
+  const validPurposes = ['email_verification', 'password_reset', 'login'];
 
-  if (purpose === 'password_reset') {
+  if (!validPurposes.includes(otpPurpose)) {
+    throw new AppError('Invalid purpose', 400);
+  }
+
+  if (otpPurpose === 'password_reset') {
     const employee = await Employee.findOne({ email });
     if (!employee) throw new NotFoundError('Account');
   }
 
-  const { otp, verificationToken } = await OTP.createOTP(email, purpose || 'email_verification');
+  // Rate limit: 3 per 15 min (same as /api/otp/send)
+  const recent = await OTP.countDocuments({
+    email, purpose: otpPurpose,
+    createdAt: { $gt: new Date(Date.now() - 15 * 60 * 1000) }
+  });
+  if (recent >= 3) throw new AppError('Too many requests. Wait 15 min.', 429);
+
+  const { otp, verificationToken } = await OTP.createOTP(email, otpPurpose);
 
   try {
-    const emailResult = await sendOTP(email, otp, purpose || 'email_verification');
+    const emailResult = await sendOTP(email, otp, otpPurpose);
     if (!emailResult.success) throw new AppError('Unable to send OTP email. Please try again later.', 502);
   } catch (err) {
     logger.warn(`Email failed: ${err.message}`);
@@ -157,12 +171,8 @@ router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
 }));
 
 // POST /api/auth/reset-password
-router.post('/reset-password', catchAsync(async (req, res) => {
+router.post('/reset-password', validatePasswordReset, catchAsync(async (req, res) => {
   const { email, otp, newPassword, verificationToken } = req.body;
-
-  if (!email || !otp || !newPassword || !verificationToken) {
-    throw new AppError('Email, OTP, verification token and password required', 400);
-  }
 
   const result = await OTP.verifyOTP(email, otp, 'password_reset', verificationToken);
   if (!result.valid) throw new AppError(result.message, 400);

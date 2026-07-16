@@ -26,8 +26,8 @@ class _OTPScreenState extends State<OTPScreen> {
   final List<FocusNode> _otpFocusNodes = List.generate(6, (_) => FocusNode());
   final _newPasswordController = TextEditingController();
   bool _otpSent = false;
-  bool _otpVerified = false;
   bool _isLoading = false;
+  bool _timerActive = false;
   int _resendTimer = 60;
   String? _verificationToken;
 
@@ -66,10 +66,13 @@ class _OTPScreenState extends State<OTPScreen> {
   }
 
   void _startTimer() {
+    if (_timerActive) return; // guard against overlapping countdown loops
+    _timerActive = true;
     Future.doWhile(() async {
       await Future.delayed(const Duration(seconds: 1));
-      if (!mounted) return false;
+      if (!mounted) { _timerActive = false; return false; }
       if (_resendTimer > 0) { setState(() => _resendTimer--); return true; }
+      _timerActive = false;
       return false;
     });
   }
@@ -89,9 +92,7 @@ class _OTPScreenState extends State<OTPScreen> {
     if (otp.length != 6) { _showError('Enter complete OTP'); return; }
     if (_verificationToken == null) { _showError('Request a new OTP'); return; }
     setState(() => _isLoading = true);
-    if (widget.isPasswordReset) {
-      setState(() { _otpVerified = true; _isLoading = false; });
-    } else if (widget.isEmailVerification) {
+    if (widget.isEmailVerification) {
       final success = await context.read<AuthProvider>().verifyOTP(
         _emailController.text.trim(), otp,
         purpose: _purpose, verificationToken: _verificationToken!,
@@ -109,16 +110,22 @@ class _OTPScreenState extends State<OTPScreen> {
     }
   }
 
+  // Password reset verifies the OTP on the backend together with the new
+  // password, so the OTP + new password are submitted in a single step.
   Future<void> _resetPassword() async {
     String otp = _otpControllers.map((c) => c.text).join();
-    if (_newPasswordController.text.length < 8) { _showError('Min 8 characters'); return; }
+    if (otp.length != 6) { _showError('Enter the 6-digit OTP from your email'); return; }
+    if (_newPasswordController.text.length < 8) { _showError('Password must be at least 8 characters'); return; }
+    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)').hasMatch(_newPasswordController.text)) {
+      _showError('Password needs uppercase, lowercase & a number'); return;
+    }
     if (_verificationToken == null) { _showError('Request a new OTP'); return; }
     setState(() => _isLoading = true);
     final auth = context.read<AuthProvider>();
     final success = await auth.resetPassword(_emailController.text.trim(), otp, _newPasswordController.text, verificationToken: _verificationToken!);
     setState(() => _isLoading = false);
     if (success && mounted) { _showSuccess('Password reset! Login now.'); Navigator.pop(context); }
-    else if (mounted) _showError('Reset failed');
+    else if (mounted) _showError(auth.errorMessage ?? 'Reset failed. Check the OTP and try again.');
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: AppTheme.errorColor));
@@ -147,7 +154,7 @@ class _OTPScreenState extends State<OTPScreen> {
                 decoration: InputDecoration(labelText: 'Email', prefixIcon: const Icon(Iconsax.sms), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
               const SizedBox(height: 24),
               CustomButton(text: 'Send OTP', isLoading: _isLoading, onPressed: _sendOTP),
-            ] else if (_otpSent && !_otpVerified) ...[
+            ] else if (_otpSent) ...[
               Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(6, (i) => Container(
                 width: 48, height: 56, margin: const EdgeInsets.symmetric(horizontal: 4),
                 child: TextFormField(controller: _otpControllers[i], focusNode: _otpFocusNodes[i],
@@ -160,16 +167,19 @@ class _OTPScreenState extends State<OTPScreen> {
                     _otpFocusNodes[i + 1].requestFocus();
                   } else if (v.isEmpty && i > 0) _otpFocusNodes[i - 1].requestFocus(); }),
               ))),
+              if (widget.isPasswordReset) ...[
+                const SizedBox(height: 24),
+                TextFormField(controller: _newPasswordController, obscureText: true,
+                  decoration: InputDecoration(labelText: 'New Password', hintText: 'Min 8 chars, upper, lower & number', prefixIcon: const Icon(Iconsax.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
+              ],
               const SizedBox(height: 24),
               _resendTimer > 0 ? Text('Resend in ${_resendTimer}s', style: const TextStyle(color: AppTheme.textSecondary))
                 : TextButton(onPressed: () { setState(() => _resendTimer = 60); _sendOTP(); }, child: const Text('Resend OTP', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w600))),
               const SizedBox(height: 24),
-              CustomButton(text: 'Verify OTP', isLoading: _isLoading, onPressed: _verifyOTP),
-            ] else if (_otpVerified && widget.isPasswordReset) ...[
-              TextFormField(controller: _newPasswordController, obscureText: true,
-                decoration: InputDecoration(labelText: 'New Password', prefixIcon: const Icon(Iconsax.lock), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)))),
-              const SizedBox(height: 24),
-              CustomButton(text: 'Reset Password', isLoading: _isLoading, onPressed: _resetPassword),
+              CustomButton(
+                text: widget.isPasswordReset ? 'Reset Password' : 'Verify OTP',
+                isLoading: _isLoading,
+                onPressed: widget.isPasswordReset ? _resetPassword : _verifyOTP),
             ],
           ]),
         ),
