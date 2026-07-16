@@ -127,4 +127,12 @@ class EmployeeService {
       throw ApiException(response['message'] ?? 'Failed to update leave');
     }
   }
+
+  Future<List<dynamic>> getAllLeaves() async {
+    final response = await _api.get('/employees/leaves');
+    if (response['success'] == true) {
+      return response['data']['leaves'] as List<dynamic>;
+    }
+    throw ApiException('Failed to fetch leaves');
+  }
 }

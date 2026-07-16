@@ -12,6 +12,7 @@ import '../leaves/leave_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import 'dashboard_tab.dart';
 import '../../screens/home/employee_tab.dart';
+import '../admin/admin_panel_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   static const String routeName = '/home';
@@ -24,21 +25,41 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
-  final List<Widget> _tabs = [
-    const DashboardTab(),
-    const EmployeesTab(),
-    const LeaveScreen(),
-    SettingsScreen(),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final employee = context.watch<AuthProvider>().employee;
+    if (employee != null &&
+        employee.role != 'admin' &&
+        employee.approvalStatus != 'approved') {
+      return Scaffold(
+          body: Center(
+              child: Padding(
+                  padding: const EdgeInsets.all(32),
+                  child: Text('Approval is not approved yet! Please wait!!',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.w600)))));
+    }
+    final tabs = employee?.role == 'admin'
+        ? [
+            const DashboardTab(),
+            const EmployeesTab(),
+            const LeaveScreen(),
+            const AdminPanelScreen(),
+            SettingsScreen()
+          ]
+        : [
+            const DashboardTab(),
+            const EmployeesTab(),
+            const LeaveScreen(),
+            SettingsScreen()
+          ];
+    if (_currentIndex >= tabs.length) _currentIndex = 0;
     return Scaffold(
       key: _scaffoldKey,
       appBar: _currentIndex == 0 ? _buildAppBar(employee) : null,
       drawer: _buildDrawer(context, employee),
-      body: _tabs[_currentIndex],
+      body: tabs[_currentIndex],
       bottomNavigationBar: _buildBottomNav(),
     );
   }
@@ -144,7 +165,10 @@ class _HomeScreenState extends State<HomeScreen> {
             _drawerItem(Iconsax.home_1, 'Home', 0),
             _drawerItem(Iconsax.people, 'Employees', 1),
             _drawerItem(Iconsax.calendar, 'Leaves', 2),
-            _drawerItem(Iconsax.setting_2, 'Settings', 3),
+            if (employee?.role == 'admin')
+              _drawerItem(Iconsax.shield_tick, 'Admin approvals', 3),
+            _drawerItem(Iconsax.setting_2, 'Settings',
+                employee?.role == 'admin' ? 4 : 3),
             const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                 child: Divider()),
@@ -265,6 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBottomNav() {
+    final isAdmin = context.read<AuthProvider>().employee?.role == 'admin';
     return Container(
         decoration: BoxDecoration(color: Colors.white, boxShadow: [
           BoxShadow(
@@ -281,7 +306,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       _navItem(0, Iconsax.home_1, 'Home'),
                       _navItem(1, Iconsax.people, 'Team'),
                       _navItem(2, Iconsax.calendar, 'Leaves'),
-                      _navItem(3, Iconsax.setting_2, 'Settings'),
+                      if (isAdmin) _navItem(3, Iconsax.shield_tick, 'Admin'),
+                      _navItem(isAdmin ? 4 : 3, Iconsax.setting_2, 'Settings'),
                     ]))));
   }
 

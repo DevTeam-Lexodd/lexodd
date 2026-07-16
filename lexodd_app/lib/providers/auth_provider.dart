@@ -28,22 +28,21 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Signup: returns verificationToken (employee created after OTP verification)
-  Future<String?> signup(Map<String, dynamic> data) async {
+  // Signup is available only after the email OTP has been verified.
+  Future<bool> signup(Map<String, dynamic> data) async {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
     try {
-      final verificationToken = await _authService.signup(data);
-      // Don't set authenticated state yet - wait for OTP verification
-      _state = AuthState.unauthenticated;
+      _employee = await _authService.signup(data);
+      _state = AuthState.authenticated;
       notifyListeners();
-      return verificationToken;
+      return true;
     } catch (e) {
       _errorMessage = e.toString();
       _state = AuthState.error;
       notifyListeners();
-      return null;
+      return false;
     }
   }
 
@@ -66,7 +65,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // OTP Login
-  Future<bool> loginWithOTP(String email, String otp, {required String verificationToken}) async {
+  Future<bool> loginWithOTP(String email, String otp,
+      {required String verificationToken}) async {
     _state = AuthState.loading;
     _errorMessage = null;
     notifyListeners();
@@ -97,7 +97,9 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // Verify OTP for signup (email_verification), login, or password_reset
-  Future<bool> verifyOTP(String email, String otp, {
+  Future<bool> verifyOTP(
+    String email,
+    String otp, {
     required String verificationToken,
     String purpose = 'email_verification',
   }) async {
@@ -105,7 +107,7 @@ class AuthProvider extends ChangeNotifier {
       await _authService.verifyOTP(email, otp,
           purpose: purpose, verificationToken: verificationToken);
       _employee = _authService.currentEmployee;
-      if (purpose == 'email_verification' || purpose == 'login') {
+      if (purpose == 'login') {
         _state = AuthState.authenticated;
       }
       notifyListeners();
@@ -117,7 +119,10 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> resetPassword(String email, String otp, String newPassword, {
+  Future<bool> resetPassword(
+    String email,
+    String otp,
+    String newPassword, {
     required String verificationToken,
   }) async {
     try {

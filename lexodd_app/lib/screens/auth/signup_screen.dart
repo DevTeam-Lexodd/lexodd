@@ -42,6 +42,8 @@ class _SignupScreenState extends State<SignupScreen> {
   final _password = TextEditingController(),
       _confirmPassword = TextEditingController();
   bool _obscurePass = true, _obscureConfirm = true;
+  bool _emailVerified = false;
+  String? _verificationToken;
 
   String? _gender,
       _bloodGroup,
@@ -99,7 +101,8 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
-  Future<void> _selectDate(TextEditingController ctrl, {bool isDob = false}) async {
+  Future<void> _selectDate(TextEditingController ctrl,
+      {bool isDob = false}) async {
     final now = DateTime.now();
     final date = await showDatePicker(
         context: context,
@@ -156,30 +159,47 @@ class _SignupScreenState extends State<SignupScreen> {
       'password': _password.text,
     };
 
+    data['verificationToken'] = _verificationToken;
     final auth = context.read<AuthProvider>();
-    final verificationToken = await auth.signup(data);
-    if (verificationToken != null && mounted) {
-      // Show OTP verification dialog
-      _showOTPDialog(_email.text.trim(), verificationToken);
+    final registered = await auth.signup(data);
+    if (registered && mounted) {
+      Navigator.of(context).pushReplacementNamed('/home');
     } else if (mounted) {
       _showError(auth.errorMessage ?? 'Registration failed');
     }
   }
 
-  void _showOTPDialog(String email, String verificationToken) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => OTPScreen(
+  Future<void> _startEmailVerification() async {
+    final email = _email.text.trim();
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      _showError('Enter a valid email address');
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    final token = await auth.sendOTP(email, purpose: 'email_verification');
+    if (!mounted) return;
+    if (token == null) {
+      _showError(auth.errorMessage ?? 'Unable to send OTP');
+      return;
+    }
+    _openOTPScreen(email, token);
+  }
+
+  void _openOTPScreen(String email, String verificationToken) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => OTPScreen(
         email: email,
         isEmailVerification: true,
         verificationToken: verificationToken,
         onVerified: () {
-          Navigator.of(dialogContext).pop(); // Close dialog
-          Navigator.of(context).pushReplacementNamed('/home'); // Navigate to home
+          Navigator.of(context).pop();
+          setState(() {
+            _verificationToken = verificationToken;
+            _emailVerified = true;
+          });
         },
       ),
-    );
+    ));
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
@@ -196,6 +216,42 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    if (!_emailVerified) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Verify your email')),
+        body: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 36),
+                  const Icon(Iconsax.sms,
+                      size: 56, color: AppTheme.primaryColor),
+                  const SizedBox(height: 20),
+                  const Text('Create your account',
+                      textAlign: TextAlign.center,
+                      style:
+                          TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  const Text(
+                      'Enter your email first. We will send a verification code before asking for your details.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: AppTheme.textSecondary)),
+                  const SizedBox(height: 32),
+                  CustomTextField(
+                      controller: _email,
+                      label: 'Email *',
+                      hint: 'you@company.com',
+                      prefixIcon: Iconsax.sms,
+                      keyboardType: TextInputType.emailAddress),
+                  const SizedBox(height: 20),
+                  CustomButton(
+                      text: 'Send OTP',
+                      isLoading: auth.isLoading,
+                      onPressed: _startEmailVerification),
+                ])),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
           title: Text('Create Account (${_currentPage + 1}/$_totalPages)'),
@@ -265,23 +321,23 @@ class _SignupScreenState extends State<SignupScreen> {
     return Expanded(
         child: Column(children: [
       Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: done
-                ? AppTheme.successColor
-                : active
-                    ? AppTheme.primaryColor
-                    : Colors.grey.shade300),
-        child: Center(
-            child: done
-                ? const Icon(Icons.check, size: 16, color: Colors.white)
-                : Text('${i + 1}',
-                    style: TextStyle(
-                        color: active ? Colors.white : AppTheme.textSecondary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12)))),
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: done
+                  ? AppTheme.successColor
+                  : active
+                      ? AppTheme.primaryColor
+                      : Colors.grey.shade300),
+          child: Center(
+              child: done
+                  ? const Icon(Icons.check, size: 16, color: Colors.white)
+                  : Text('${i + 1}',
+                      style: TextStyle(
+                          color: active ? Colors.white : AppTheme.textSecondary,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12)))),
       const SizedBox(height: 4),
       Text(label,
           style: TextStyle(
@@ -603,7 +659,8 @@ class _SignupScreenState extends State<SignupScreen> {
                   validator: (v) {
                     if (v!.isEmpty) return 'Required';
                     if (v.length < 8) return 'Min 8 chars';
-                    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)').hasMatch(v)) {
+                    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)')
+                        .hasMatch(v)) {
                       return 'Need upper, lower & digit';
                     }
                     return null;

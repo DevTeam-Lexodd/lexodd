@@ -1,97 +1,171 @@
-// Brevo Email Service - Ultra Simple Version
-const axios = require('axios');
 
-// Configuration from environment
-const API_KEY = process.env.BREVO_API_KEY;
-const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL;
-const SENDER_NAME = process.env.BREVO_SENDER_NAME || 'Lexodd Hypernova';
-const API_URL = 'https://api.brevo.com/v3/smtp/email';
+const { ClientSecretCredential } = require("@azure/identity");
+const fetch = require("isomorphic-fetch");
+const crypto = require("crypto");
+require("dotenv").config({ path: ".env" });
+const fs = require("fs");
+const path = require("path");
+const PaymentConfig = require("../models/paymentConfigModel");
 
-/**
- * Send email using Brevo API
- */
-async function sendEmail(to, subject, html) {
-  // Check config
-  if (!API_KEY || API_KEY === 'your_brevo_api_key_here') {
-    console.log('WARN: BREVO_API_KEY not set');
-    return { success: false, error: 'API key not set' };
-  }
 
-  if (!SENDER_EMAIL || SENDER_EMAIL.includes('example.com')) {
-    console.log('WARN: BREVO_SENDER_EMAIL not set');
-    return { success: false, error: 'Sender email not set' };
+const logoPath = path.join(__dirname, "../images/logo.png");
+
+// --- Azure AD App Credentials & Sender ---
+const tenantId = process.env.AZURE_TENANT_ID;
+const clientId = process.env.AZURE_CLIENT_ID;
+const clientSecret = process.env.AZURE_CLIENT_SECRET;
+const senderEmail = process.env.EMAIL_USER; // the mailbox that will send via Graph
+  
+// Create credential once
+const credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+
+// --- Shared helper: send mail through Microsoft Graph with inline logo ---
+// --- Centralized email sender with quota & error handling ---
+
+async function sendEmail({ to, subject, html }) {
+  const recipientEmail =
+    typeof to === "string" ? to : to?.email || String(to || "");
+
+  if (!recipientEmail) {
+    console.error("❌ Email sending failed: Missing recipient.");
+    return { success: false, reason: "MISSING_RECIPIENT" };
   }
 
   try {
-    console.log('Calling Brevo API...');
-    
-    const result = await axios.post(API_URL, {
-      sender: { name: SENDER_NAME, email: SENDER_EMAIL },
-      to: [{ email: to, name: to }],
-      subject: subject,
-      htmlContent: html
-    }, {
-      headers: {
-        'api-key': API_KEY,
-        'content-type': 'application/json'
-      }
-    });
+    console.log("📨 Preparing email...");
+    console.log("Sender:", senderEmail);
+    console.log("Recipient:", recipientEmail);
 
-    console.log('Email sent! ID:', result.data.messageId);
-    return { success: true, messageId: result.data.messageId };
+    const tokenResponse = await credential.getToken(
+      "https://graph.microsoft.com/.default"
+    );
 
-  } catch (err) {
-    if (err.response) {
-      console.log('Brevo Error:', err.response.status, err.response.data);
-      return { success: false, error: err.response.data.message, statusCode: err.response.status };
+    if (!tokenResponse || !tokenResponse.token) {
+      console.error("❌ Failed to get Microsoft Graph token");
+      return { success: false, reason: "TOKEN_ERROR" };
     }
-    console.log('Error:', err.message);
-    return { success: false, error: err.message };
+
+    const logoContentBytes = fs.readFileSync(logoPath).toString("base64");
+
+    const payload = {
+      message: {
+        subject,
+        body: {
+          contentType: "HTML",
+          content: html,
+        },
+        toRecipients: [
+          {
+            emailAddress: {
+              address: recipientEmail,
+            },
+          },
+        ],
+        attachments: [
+          {
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            name: "logo.png",
+            contentId: "unique-logo-cid",
+            isInline: true,
+            contentBytes: logoContentBytes,
+          },
+        ],
+      },
+      saveToSentItems: true,
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    let res;
+
+    try {
+      res = await fetch(
+        `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(
+          senderEmail
+        )}/sendMail`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${tokenResponse.token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+          signal: controller.signal,
+        }
+      );
+    } catch (networkError) {
+      console.error("❌ Network error while sending email:", networkError.message);
+      return { success: false, reason: "NETWORK_ERROR", details: networkError.message };
+    }
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+
+      console.error("❌ Graph API error:", {
+        status: res.status,
+        body: text,
+      });
+
+      return {
+        success: false,
+        reason: `GRAPH_ERROR_${res.status}`,
+        details: text,
+      };
+    }
+
+    console.log("✅ Email sent successfully to:", recipientEmail);
+
+    return { success: true };
+  } catch (error) {
+  const errorMessage = error.message || "";
+
+  console.error("❌ Unexpected email send error:", errorMessage);
+
+  // 🔴 INVALID CLIENT SECRET (YOUR CASE)
+  if (errorMessage.includes("AADSTS7000215")) {
+    return {
+      success: false,
+      reason: "INVALID_AZURE_CLIENT_SECRET",
+      details:
+        "The Azure client secret is invalid or expired. Use the SECRET VALUE (not ID) from Azure Portal.",
+    };
   }
-}
 
-/**
- * Send OTP email
- */
-async function sendOTP(email, otp, purpose) {
-  const subjects = {
-    email_verification: 'Verify Your Email - Lexodd Hypernova',
-    password_reset: 'Password Reset OTP - Lexodd Hypernova',
-    login: 'Login OTP - Lexodd Hypernova'
+  // 🔴 INVALID CLIENT ID
+  if (errorMessage.includes("AADSTS700016")) {
+    return {
+      success: false,
+      reason: "INVALID_CLIENT_ID",
+      details: "Azure Client ID is incorrect or app not found.",
+    };
+  }
+
+  // 🔴 TENANT ISSUE
+  if (errorMessage.includes("AADSTS500011")) {
+    return {
+      success: false,
+      reason: "INVALID_TENANT",
+      details: "Azure Tenant ID is incorrect.",
+    };
+  }
+
+  // 🔴 NETWORK / TIMEOUT
+  if (error.name === "AbortError") {
+    return {
+      success: false,
+      reason: "TIMEOUT",
+      details: "Email request timed out.",
+    };
+  }
+
+  // 🔴 FALLBACK
+  return {
+    success: false,
+    reason: "UNKNOWN_ERROR",
+    details: errorMessage,
   };
-
-  const html = `
-<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:20px;font-family:Arial;background:#f4f4f4;">
-  <table width="600" style="margin:auto;background:#fff;border-radius:12px;">
-    <tr>
-      <td style="background:linear-gradient(135deg,#667eea,#764ba2);padding:40px;text-align:center;">
-        <h1 style="color:#fff;margin:0;">Lexodd Hypernova</h1>
-      </td>
-    </tr>
-    <tr>
-      <td style="padding:40px;">
-        <h2 style="color:#333;">OTP Verification</h2>
-        <p style="color:#555;">Your OTP code:</p>
-        <div style="background:#f8f9fa;border:3px dashed #667eea;border-radius:12px;padding:30px;text-align:center;margin:30px 0;">
-          <span style="font-size:48px;font-weight:bold;color:#667eea;letter-spacing:10px;font-family:monospace;">${otp}</span>
-        </div>
-        <p style="color:#e74c3c;font-weight:bold;text-align:center;">Valid for 5 minutes</p>
-      </td>
-    </tr>
-    <tr>
-      <td style="background:#f8f9fa;padding:20px;text-align:center;">
-        <p style="color:#999;font-size:12px;">Do not reply to this email</p>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>`;
-
-console.log(`Sending OTP email to ${email} for purpose: ${purpose}`);
-  return await sendEmail(email, subjects[purpose] || 'OTP Verification', html);
 }
-
-// Export functions
-module.exports = { sendEmail, sendOTP };
+}

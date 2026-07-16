@@ -47,6 +47,12 @@ router.get('/dashboard', protect, catchAsync(async (req, res) => {
   return ApiResponse.success(res, 200, 'Dashboard', { totalEmployees, departmentStats, pendingLeaves, recentJoinees });
 }));
 
+// GET /api/employees/leaves - approval queue for administrators
+router.get('/leaves', protect, authorize('admin'), catchAsync(async (req, res) => {
+  const leaves = await Leave.find().populate('employee', 'firstName lastName email employeeId').sort({ createdAt: -1 });
+  return ApiResponse.success(res, 200, 'Leaves fetched', { leaves });
+}));
+
 // GET /api/employees/:id
 router.get('/:id', protect, validateObjectId, catchAsync(async (req, res) => {
   const employee = await Employee.findById(req.params.id);
@@ -64,7 +70,10 @@ router.put('/:id', protect, validateObjectId, catchAsync(async (req, res) => {
   }
 
   const allowed = ['firstName', 'lastName', 'phone', 'address', 'emergencyContact', 'bankDetails'];
-  const hrOnly = ['department', 'designation', 'employmentType', 'ctc', 'role', 'isActive'];
+  const hrOnly = ['department', 'designation', 'employmentType', 'ctc', 'role', 'isActive', 'approvalStatus'];
+  if (req.body.approvalStatus !== undefined && req.employee.role !== 'admin') {
+    throw new AuthorizationError('Only an admin can change a user approval status');
+  }
   
   const updates = {};
   allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });

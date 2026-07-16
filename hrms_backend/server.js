@@ -63,6 +63,11 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Routes
+
+app.get("/",(req,res)=>{
+  res.send("Welcome to lexodd API");
+})
+
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,

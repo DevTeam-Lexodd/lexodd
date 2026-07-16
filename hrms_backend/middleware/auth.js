@@ -26,6 +26,9 @@ const protect = async (req, res, next) => {
       if (!employee.isActive) {
         return next(new AuthenticationError('Account deactivated. Contact HR.'));
       }
+      if (employee.approvalStatus !== 'approved' && employee.role !== 'admin') {
+        return next(new AuthorizationError('Approval is not approved yet! Please wait!!'));
+      }
 
       if (employee.passwordChangedAt) {
         const changedTimestamp = parseInt(employee.passwordChangedAt.getTime() / 1000, 10);
