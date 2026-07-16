@@ -17,7 +17,7 @@ if (missingEnv.length > 0) {
   console.error('See .env.example for the full list of configuration options.');
   process.exit(1);
 }
-['BREVO_API_KEY', 'BREVO_SENDER_EMAIL'].forEach(key => {
+['AZURE_TENANT_ID', 'AZURE_CLIENT_ID', 'AZURE_CLIENT_SECRET', 'EMAIL_USER'].forEach(key => {
   if (!process.env[key]) console.warn(`WARN: ${key} not set - OTP emails will fail until it is configured.`);
 });
 

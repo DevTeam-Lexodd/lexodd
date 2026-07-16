@@ -1,7 +1,7 @@
 {
   "name": "employee-management-backend",
   "version": "2.0.0",
-  "description": "EMS Backend with Brevo Email Service",
+  "description": "EMS Backend with Microsoft Graph email",
   "main": "server.js",
   "engines": {
     "node": ">=18.0.0"
@@ -10,9 +10,10 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed": "node utils/seeder.js",
-    "test-email": "node test-brevo.js"
+    "test-email": "node test-graph-email.js"
   },
   "dependencies": {
+    "@azure/identity": "^4.12.0",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -32,7 +33,7 @@
     "employee",
     "management",
     "crm",
-    "brevo",
+    "microsoft-graph",
     "nodejs"
   ],
   "license": "MIT"
