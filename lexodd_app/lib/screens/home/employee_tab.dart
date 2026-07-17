@@ -4,7 +4,7 @@ import '../../config/theme.dart';
 import '../../models/employee.dart';
 import '../../services/api_service.dart';
 import '../../services/employee_service.dart';
-import '../profile/profile_screen.dart';
+import '../profile_screen.dart';
 
 class EmployeesTab extends StatefulWidget {
   const EmployeesTab({super.key});

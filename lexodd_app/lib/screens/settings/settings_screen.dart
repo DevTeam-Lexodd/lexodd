@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:iconsax/iconsax.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../config/constant.dart';
 import '../../services/auth_service.dart';
+import '../../utils/app_snackbar.dart';
 import '../auth/login_screen.dart';
-import '../profile/profile_screen.dart';
+import '../profile_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   static const String routeName = '/settings';
@@ -53,11 +55,15 @@ class SettingsScreen extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                         Text(employee?.fullName ?? 'User',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 18,
                                 fontWeight: FontWeight.w600)),
                         Text(employee?.email ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.8),
                                 fontSize: 13)),
@@ -87,7 +93,9 @@ class SettingsScreen extends StatelessWidget {
                 employee?.isEmailVerified == true
                     ? 'Verified ✓'
                     : 'Not verified',
-                () {},
+                () => AppSnackbar.info(context, employee?.isEmailVerified == true
+                    ? 'Your email is verified.'
+                    : 'Please verify your email from signup/login OTP flow.'),
                 trailing: Icon(
                     employee?.isEmailVerified == true
                         ? Iconsax.tick_circle
@@ -97,20 +105,27 @@ class SettingsScreen extends StatelessWidget {
                         : AppTheme.warningColor,
                     size: 20)),
             const SizedBox(height: 20),
-            _sectionTitle('Preferences'),
-            _tile(context, Iconsax.notification, 'Notifications',
-                'Manage notifications', () {}),
-            _tile(context, Iconsax.moon, 'Dark Mode', 'Coming soon', () {}),
+            _sectionTitle('Application'),
             _tile(
-                context, Iconsax.language_square, 'Language', 'English', () {}),
-            const SizedBox(height: 20),
-            _sectionTitle('Support'),
-            _tile(context, Iconsax.message_question, 'Help & Support',
-                'Get help', () {}),
-            _tile(context, Iconsax.document, 'Terms & Conditions', 'Read terms',
-                () {}),
-            _tile(
-                context, Iconsax.info_circle, 'About', 'Version 1.0.0', () {}),
+                context,
+                Iconsax.info_circle,
+                'About',
+                'Version ${AppConstants.appVersion}',
+                () => showAboutDialog(
+                      context: context,
+                      applicationName: AppConstants.appName,
+                      applicationVersion: AppConstants.appVersion,
+                      applicationIcon: Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          gradient: AppTheme.primaryGradient,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.business_center_rounded,
+                            color: Colors.white),
+                      ),
+                    )),
             const SizedBox(height: 20),
             SizedBox(
                 width: double.infinity,

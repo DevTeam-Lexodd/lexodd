@@ -85,12 +85,19 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // Send OTP for login or password reset
+  // Send OTP for login, email verification, or password reset
   Future<String?> sendOTP(String email, {String purpose = 'login'}) async {
+    _state = AuthState.loading;
+    _errorMessage = null;
+    notifyListeners();
     try {
-      return await _authService.sendOTP(email, purpose: purpose);
+      final token = await _authService.sendOTP(email, purpose: purpose);
+      _state = _employee != null ? AuthState.authenticated : AuthState.unauthenticated;
+      notifyListeners();
+      return token;
     } catch (e) {
       _errorMessage = e.toString();
+      _state = _employee != null ? AuthState.authenticated : AuthState.error;
       notifyListeners();
       return null;
     }

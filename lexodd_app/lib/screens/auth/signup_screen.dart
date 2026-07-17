@@ -148,9 +148,11 @@ class _SignupScreenState extends State<SignupScreen> {
         'phone': _emergPhone.text.trim()
       },
       'bankDetails': {
-        if (_accNo.text.isNotEmpty) 'accountNumber': _accNo.text,
-        if (_bank.text.isNotEmpty) 'bankName': _bank.text,
-        if (_ifsc.text.isNotEmpty) 'ifscCode': _ifsc.text.toUpperCase()
+        if (_accNo.text.isNotEmpty) 'accountNumber': _accNo.text.trim(),
+        if (_bank.text.isNotEmpty) 'bankName': _bank.text.trim(),
+        if (_branch.text.isNotEmpty) 'branchName': _branch.text.trim(),
+        if (_ifsc.text.isNotEmpty) 'ifscCode': _ifsc.text.trim().toUpperCase(),
+        if (_accountType != null) 'accountType': _accountType,
       },
       'documents': {
         if (_aadhar.text.isNotEmpty) 'aadharNumber': _aadhar.text,
@@ -182,28 +184,35 @@ class _SignupScreenState extends State<SignupScreen> {
       _showError(auth.errorMessage ?? 'Unable to send OTP');
       return;
     }
-    _openOTPScreen(email, token);
+    _showSuccess('OTP sent to $email');
+    await _openOTPScreen(email, token);
   }
 
-  void _openOTPScreen(String email, String verificationToken) {
-    Navigator.of(context).push(MaterialPageRoute(
+  Future<void> _openOTPScreen(String email, String verificationToken) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
       builder: (_) => OTPScreen(
         email: email,
         isEmailVerification: true,
+        displayAsDialog: true,
         verificationToken: verificationToken,
         onVerified: () {
-          Navigator.of(context).pop();
+          Navigator.of(context, rootNavigator: true).pop();
           setState(() {
             _verificationToken = verificationToken;
             _emailVerified = true;
           });
         },
       ),
-    ));
+    );
   }
 
   void _showError(String msg) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppTheme.errorColor));
+
+  void _showSuccess(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: AppTheme.successColor));
 
   // Matches the backend rule: 2-50 chars, letters/spaces/'/- only
   String? _nameValidator(String? v) {
@@ -219,9 +228,18 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_emailVerified) {
       return Scaffold(
         appBar: AppBar(title: const Text('Verify your email')),
-        body: Padding(
+        body: SafeArea(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-            child: Column(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height -
+                    MediaQuery.of(context).padding.top -
+                    kToolbarHeight -
+                    48,
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 36),
@@ -249,7 +267,11 @@ class _SignupScreenState extends State<SignupScreen> {
                       text: 'Send OTP',
                       isLoading: auth.isLoading,
                       onPressed: _startEmailVerification),
-                ])),
+                ],
+              ),
+            ),
+          ),
+        ),
       );
     }
     return Scaffold(
@@ -339,11 +361,14 @@ class _SignupScreenState extends State<SignupScreen> {
                           fontWeight: FontWeight.w600,
                           fontSize: 12)))),
       const SizedBox(height: 4),
-      Text(label,
-          style: TextStyle(
-              fontSize: 10,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-              color: active ? AppTheme.primaryColor : AppTheme.textHint)),
+      FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(label,
+              maxLines: 1,
+              style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  color: active ? AppTheme.primaryColor : AppTheme.textHint))),
     ]));
   }
 
@@ -382,6 +407,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   hint: 'john@company.com',
                   prefixIcon: Iconsax.sms,
                   keyboardType: TextInputType.emailAddress,
+                  readOnly: true,
                   validator: (v) {
                     if (v!.isEmpty) return 'Required';
                     if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')

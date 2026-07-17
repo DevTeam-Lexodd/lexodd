@@ -30,6 +30,8 @@ class Employee {
   final bool isEmailVerified;
   final bool isActive;
   final String approvalStatus;
+  final DateTime? approvalDate;
+  final String? rejectionReason;
 
   String get fullName => '$firstName $lastName';
   String get initials =>
@@ -89,11 +91,13 @@ class Employee {
     this.isEmailVerified = false,
     this.isActive = true,
     this.approvalStatus = 'pending',
+    this.approvalDate,
+    this.rejectionReason,
   });
 
   factory Employee.fromJson(Map<String, dynamic> json) {
     return Employee(
-      id: json['_id'],
+      id: json['_id'] ?? json['id'],
       employeeId: json['employeeId'],
       firstName: json['firstName'] ?? '',
       lastName: json['lastName'] ?? '',
@@ -101,7 +105,7 @@ class Employee {
       phone: json['phone'] ?? '',
       alternatePhone: json['alternatePhone'],
       dateOfBirth: json['dateOfBirth'] != null
-          ? DateTime.parse(json['dateOfBirth'])
+          ? DateTime.tryParse(json['dateOfBirth'].toString())
           : null,
       gender: json['gender'] ?? '',
       bloodGroup: json['bloodGroup'],
@@ -116,12 +120,12 @@ class Employee {
       department: json['department'] ?? '',
       designation: json['designation'] ?? '',
       dateOfJoining: json['dateOfJoining'] != null
-          ? DateTime.parse(json['dateOfJoining'])
+          ? DateTime.tryParse(json['dateOfJoining'].toString())
           : null,
       employmentType: json['employmentType'] ?? '',
       workLocation: json['workLocation'],
       reportingManager: json['reportingManager'],
-      ctc: json['ctc']?.toDouble(),
+      ctc: json['ctc'] is num ? (json['ctc'] as num).toDouble() : null,
       emergencyContact: json['emergencyContact'] != null
           ? EmergencyContact.fromJson(json['emergencyContact'])
           : null,
@@ -143,6 +147,10 @@ class Employee {
       isEmailVerified: json['isEmailVerified'] ?? false,
       isActive: json['isActive'] ?? true,
       approvalStatus: json['approvalStatus'] ?? 'pending',
+      approvalDate: json['approvalDate'] != null
+          ? DateTime.tryParse(json['approvalDate'].toString())
+          : null,
+      rejectionReason: json['rejectionReason'],
     );
   }
 
@@ -156,6 +164,7 @@ class Employee {
       'dateOfBirth': dateOfBirth?.toIso8601String(),
       'gender': gender,
       'bloodGroup': bloodGroup,
+      'profilePhoto': profilePhoto,
       'maritalStatus': maritalStatus,
       'address': address?.toJson(),
       'permanentAddress': permanentAddress?.toJson(),
@@ -175,6 +184,8 @@ class Employee {
       'isEmailVerified': isEmailVerified,
       'isActive': isActive,
       'approvalStatus': approvalStatus,
+      'approvalDate': approvalDate?.toIso8601String(),
+      'rejectionReason': rejectionReason,
     };
   }
 }
