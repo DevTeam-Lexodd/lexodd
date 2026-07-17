@@ -6,8 +6,9 @@ import 'package:iconsax/iconsax.dart';
 import '../../config/constant.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/app_snackbar.dart';
 import '../auth/login_screen.dart';
-import '../profile/profile_screen.dart';
+import '../profile_screen.dart';
 import '../leaves/leave_screen.dart';
 import '../../screens/settings/settings_screen.dart';
 import 'dashboard_tab.dart';
@@ -48,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 20),
                     Text(
                         isRejected
-                            ? 'Your registration was rejected.\nPlease contact HR.'
+                            ? 'Your registration was rejected.\n${employee.rejectionReason?.isNotEmpty == true ? employee.rejectionReason! : 'Please contact HR.'}'
                             : 'Approval is pending yet!! Please wait...',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
@@ -61,8 +62,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           icon: const Icon(Icons.refresh),
                           label: const Text('Check again')),
                     TextButton(
-                        onPressed: () =>
-                            context.read<AuthProvider>().logout(),
+                        onPressed: () async {
+                          await context.read<AuthProvider>().logout();
+                          if (mounted) {
+                            Navigator.of(context)
+                                .pushReplacementNamed(LoginScreen.routeName);
+                          }
+                        },
                         child: const Text('Logout')),
                   ]))));
     }
@@ -106,17 +112,25 @@ class _HomeScreenState extends State<HomeScreen> {
             child: const Icon(Icons.business_center_rounded,
                 size: 20, color: Colors.white)),
         const SizedBox(width: 10),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Text(AppConstants.appName,
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-          if (employee != null)
-            Text('Hello, ${employee.firstName}!',
-                style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
-        ]),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text(AppConstants.appName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            if (employee != null)
+              Text('Hello, ${employee.firstName}!',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: AppTheme.textSecondary)),
+          ]),
+        ),
       ]),
       actions: [
         IconButton(
-            icon: const Icon(Iconsax.notification, size: 22), onPressed: () {}),
+            icon: const Icon(Iconsax.notification, size: 22),
+            onPressed: () => AppSnackbar.info(
+                context, 'Notifications are delivered by email for approvals and leave updates.')),
         GestureDetector(
           onTap: () => Navigator.push(context,
               MaterialPageRoute(builder: (_) => const ProfileScreen())),
@@ -164,6 +178,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             fontWeight: FontWeight.w700)))),
             const SizedBox(height: 12),
             Text(employee?.fullName ?? 'User',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
@@ -315,7 +331,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildBottomNav() {
-    final isAdmin = context.read<AuthProvider>().employee?.role == 'admin';
+    final isAdmin = context.watch<AuthProvider>().employee?.role == 'admin';
     return Container(
         decoration: BoxDecoration(color: Colors.white, boxShadow: [
           BoxShadow(
@@ -339,28 +355,31 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _navItem(int index, IconData icon, String label) {
     final active = index == _currentIndex;
-    return GestureDetector(
-        onTap: () => setState(() => _currentIndex = index),
-        child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-                color: active
-                    ? AppTheme.primaryColor.withValues(alpha: 0.1)
-                    : Colors.transparent,
-                borderRadius: BorderRadius.circular(12)),
-            child: Row(children: [
-              Icon(icon,
-                  color: active ? AppTheme.primaryColor : AppTheme.textHint,
-                  size: 22),
-              if (active) ...[
-                const SizedBox(width: 8),
-                Text(label,
-                    style: const TextStyle(
-                        color: AppTheme.primaryColor,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13))
-              ],
-            ])));
+    return Expanded(
+        child: GestureDetector(
+            onTap: () => setState(() => _currentIndex = index),
+            child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                    color: active
+                        ? AppTheme.primaryColor.withValues(alpha: 0.1)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12)),
+                child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(icon,
+                          color: active ? AppTheme.primaryColor : AppTheme.textHint,
+                          size: 22),
+                      if (active) ...[
+                        const SizedBox(width: 6),
+                        Text(label,
+                            style: const TextStyle(
+                                color: AppTheme.primaryColor,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13))
+                      ],
+                    ])))));
   }
 }

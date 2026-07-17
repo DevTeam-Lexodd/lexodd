@@ -86,14 +86,19 @@ class AuthService {
     if (response['success'] == true) {
       final data = response['data'] ?? {};
 
-      // If token returned (signup verification or OTP login), store it and fetch profile
+      // OTP login returns a JWT + compact employee payload. Pending/rejected
+      // accounts are intentionally blocked by /auth/me, so only fetch the full
+      // profile when the backend says the account is approved.
       if (data['token'] != null) {
         await _api.setToken(data['token']);
-        final profile = await getProfile();
+        final employeeData = data['employee'];
+        final profile = employeeData is Map<String, dynamic> &&
+                employeeData['approvalStatus'] != 'approved'
+            ? Employee.fromJson(employeeData)
+            : await getProfile();
         _currentEmployee = profile;
         await _saveEmployeeLocally(profile);
-      } else if (_currentEmployee != null) {
-        // For password reset, just refresh profile
+      } else if (_currentEmployee != null && purpose != 'password_reset') {
         await getProfile();
       }
       return data;

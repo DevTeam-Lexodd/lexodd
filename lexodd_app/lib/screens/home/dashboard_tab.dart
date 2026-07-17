@@ -9,6 +9,8 @@ import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/employee_service.dart';
 import '../../widgets/stat_card.dart';
+import '../leaves/leave_screen.dart';
+import '../profile_screen.dart';
 
 class DashboardTab extends StatefulWidget {
   const DashboardTab({super.key});
@@ -42,9 +44,9 @@ class _DashboardTabState extends State<DashboardTab> {
     } catch (e) {
       if (mounted) {
         setState(() {
-        _loading = false;
-        _loadFailed = true;
-      });
+          _loading = false;
+          _loadFailed = true;
+        });
       }
     }
   }
@@ -202,22 +204,16 @@ class _DashboardTabState extends State<DashboardTab> {
       {
         'icon': Iconsax.calendar_add,
         'label': 'Apply Leave',
-        'color': const Color(0xFF667EEA)
+        'color': const Color(0xFF667EEA),
+        'onTap': () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const LeaveScreen())),
       },
       {
         'icon': Iconsax.profile_2user,
         'label': 'My Profile',
-        'color': const Color(0xFF10B981)
-      },
-      {
-        'icon': Iconsax.document_text,
-        'label': 'Payslip',
-        'color': const Color(0xFFF59E0B)
-      },
-      {
-        'icon': Iconsax.message_question,
-        'label': 'Support',
-        'color': const Color(0xFF8B5CF6)
+        'color': const Color(0xFF10B981),
+        'onTap': () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const ProfileScreen())),
       },
     ];
     return Padding(
@@ -225,25 +221,33 @@ class _DashboardTabState extends State<DashboardTab> {
         child: Row(
             children: actions
                 .map((a) => Expanded(
-                        child: Column(children: [
-                      Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                              color: (a['color'] as Color).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(16)),
-                          child: Icon(a['icon'] as IconData,
-                              color: a['color'] as Color, size: 24)),
-                      const SizedBox(height: 8),
-                      Text(a['label'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              color: AppTheme.textSecondary)),
-                    ])))
+                        child: InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: a['onTap'] as VoidCallback,
+                            child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                child: Column(children: [
+                                  Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                          color: (a['color'] as Color)
+                                              .withOpacity(0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(16)),
+                                      child: Icon(a['icon'] as IconData,
+                                          color: a['color'] as Color,
+                                          size: 24)),
+                                  const SizedBox(height: 8),
+                                  Text(a['label'] as String,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppTheme.textSecondary)),
+                                ])))))
                 .toList()));
   }
 
@@ -281,13 +285,15 @@ class _DashboardTabState extends State<DashboardTab> {
     }
     return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: GridView.count(
+        child: LayoutBuilder(builder: (context, constraints) {
+          final isVeryNarrow = constraints.maxWidth < 340;
+          return GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
+            crossAxisCount: isVeryNarrow ? 1 : 2,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childAspectRatio: 1.5,
+            childAspectRatio: isVeryNarrow ? 2.6 : 1.35,
             children: [
               StatCard(
                   icon: Iconsax.people,
@@ -305,11 +311,17 @@ class _DashboardTabState extends State<DashboardTab> {
                   value: '${_data?.departmentStats.length ?? 0}',
                   color: AppTheme.successColor),
               StatCard(
+                  icon: Iconsax.shield_tick,
+                  title: 'Pending Approvals',
+                  value: '${_data?.pendingApprovals ?? 0}',
+                  color: AppTheme.errorColor),
+              StatCard(
                   icon: Iconsax.calendar_tick,
                   title: 'Recent Joinees',
                   value: '${_data?.recentJoinees.length ?? 0}',
                   color: AppTheme.infoColor),
-            ]));
+            ]);
+        }));
   }
 
   Widget _buildLeaveBalance(dynamic balance) {

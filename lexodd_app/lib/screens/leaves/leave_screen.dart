@@ -253,7 +253,8 @@ class _LeaveScreenState extends State<LeaveScreen> {
         shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
         builder: (context) => StatefulBuilder(
-            builder: (context, setMS) => Padding(
+            builder: (context, setMS) => SingleChildScrollView(
+                child: Padding(
                 padding: EdgeInsets.only(
                     bottom: MediaQuery.of(context).viewInsets.bottom,
                     left: 24,
@@ -384,6 +385,6 @@ class _LeaveScreenState extends State<LeaveScreen> {
                               },
                               child: const Text('Submit'))),
                       const SizedBox(height: 24),
-                    ]))));
+                    ])))));
   }
 }

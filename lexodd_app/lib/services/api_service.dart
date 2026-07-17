@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,7 +7,18 @@ import '../config/constant.dart';
 class ApiException implements Exception {
   final String message;
   final int? statusCode;
-  ApiException(this.message, {this.statusCode});
+  final String? errorCode;
+  final dynamic data;
+  final dynamic errors;
+
+  ApiException(
+    this.message, {
+    this.statusCode,
+    this.errorCode,
+    this.data,
+    this.errors,
+  });
+
   @override
   String toString() => message;
 }
@@ -38,53 +50,55 @@ class ApiService {
 
   Map<String, String> get _headers {
     final headers = <String, String>{'Content-Type': 'application/json'};
-    if (_token != null) headers['Authorization'] = 'Bearer $_token';
+    if (_token != null && _token!.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_token';
+    }
     return headers;
   }
 
   Future<dynamic> get(String endpoint, {Map<String, String>? queryParams}) async {
-    try {
+    return _send(() async {
       Uri uri = Uri.parse('${AppConstants.baseUrl}$endpoint');
-      if (queryParams != null) uri = uri.replace(queryParameters: queryParams);
-      final response = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 30));
-      return _handleResponse(response);
-    } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException('Network error. Check your connection.');
-    }
+      if (queryParams != null) {
+        uri = uri.replace(queryParameters: queryParams);
+      }
+      return http.get(uri, headers: _headers).timeout(const Duration(seconds: 30));
+    });
   }
 
   Future<dynamic> post(String endpoint, {Map<String, dynamic>? body}) async {
-    try {
+    return _send(() async {
       final uri = Uri.parse('${AppConstants.baseUrl}$endpoint');
-      final response = await http.post(uri, headers: _headers, body: body != null ? jsonEncode(body) : null)
+      return http
+          .post(uri, headers: _headers, body: body != null ? jsonEncode(body) : null)
           .timeout(const Duration(seconds: 30));
-      return _handleResponse(response);
-    } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException('Network error. Check your connection.');
-    }
+    });
   }
 
   Future<dynamic> put(String endpoint, {Map<String, dynamic>? body}) async {
-    try {
+    return _send(() async {
       final uri = Uri.parse('${AppConstants.baseUrl}$endpoint');
-      final response = await http.put(uri, headers: _headers, body: body != null ? jsonEncode(body) : null)
+      return http
+          .put(uri, headers: _headers, body: body != null ? jsonEncode(body) : null)
           .timeout(const Duration(seconds: 30));
-      return _handleResponse(response);
-    } catch (e) {
-      if (e is ApiException) rethrow;
-      throw ApiException('Network error. Check your connection.');
-    }
+    });
   }
 
   Future<dynamic> delete(String endpoint) async {
-    try {
+    return _send(() async {
       final uri = Uri.parse('${AppConstants.baseUrl}$endpoint');
-      final response = await http.delete(uri, headers: _headers).timeout(const Duration(seconds: 30));
-      return _handleResponse(response);
-    } catch (e) {
-      if (e is ApiException) rethrow;
+      return http.delete(uri, headers: _headers).timeout(const Duration(seconds: 30));
+    });
+  }
+
+  Future<dynamic> _send(Future<http.Response> Function() request) async {
+    try {
+      return _handleResponse(await request());
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw ApiException('Request timed out. Please try again.');
+    } catch (_) {
       throw ApiException('Network error. Check your connection.');
     }
   }
@@ -92,24 +106,41 @@ class ApiService {
   dynamic _handleResponse(http.Response response) {
     dynamic body;
     try {
-      body = jsonDecode(response.body);
+      body = response.body.isEmpty ? <String, dynamic>{} : jsonDecode(response.body);
     } catch (_) {
-      // Non-JSON body (proxy error page, HTML rate-limit page, empty body, ...)
       throw ApiException(
-          'Unexpected server response (${response.statusCode}). Please try again.',
-          statusCode: response.statusCode);
+        'Unexpected server response (${response.statusCode}). Please try again.',
+        statusCode: response.statusCode,
+      );
     }
+
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;
-    } else {
-      final errors = body['errors'];
-      final validationMessage = errors is List && errors.isNotEmpty
-          ? errors
-              .map((error) => '${error['field']}: ${error['message']}')
-              .join('\n')
-          : null;
-      throw ApiException(validationMessage ?? body['message'] ?? 'An error occurred',
-          statusCode: response.statusCode);
     }
+
+    String? validationMessage;
+    final errors = body is Map<String, dynamic> ? body['errors'] : null;
+    if (errors is List && errors.isNotEmpty) {
+      validationMessage = errors.map((error) {
+        if (error is Map) {
+          final field = error['field'] ?? error['path'] ?? 'field';
+          final message = error['message'] ?? error['msg'] ?? 'Invalid value';
+          return '$field: $message';
+        }
+        return error.toString();
+      }).join('\n');
+    }
+
+    final message = body is Map<String, dynamic>
+        ? (validationMessage ?? body['message']?.toString())
+        : null;
+
+    throw ApiException(
+      message ?? 'An error occurred. Please try again.',
+      statusCode: response.statusCode,
+      errorCode: body is Map<String, dynamic> ? body['errorCode']?.toString() : null,
+      data: body is Map<String, dynamic> ? body['data'] : null,
+      errors: errors,
+    );
   }
 }
