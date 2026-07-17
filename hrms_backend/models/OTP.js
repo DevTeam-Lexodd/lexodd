@@ -12,6 +12,13 @@ const otpSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 otpSchema.index({ email: 1, purpose: 1 });
+otpSchema.index({ email: 1, purpose: 1, createdAt: -1 });
+
+// OTP validity window in minutes - parses OTP_EXPIRY safely
+otpSchema.statics.expiryMinutes = function() {
+  const parsed = parseInt(process.env.OTP_EXPIRY, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 5;
+};
 
 otpSchema.statics.generateOTP = function() {
   return crypto.randomInt(100000, 999999).toString();
@@ -33,18 +40,36 @@ otpSchema.statics.safeEqual = function(hexA, hexB) {
   return crypto.timingSafeEqual(a, b);
 };
 
+// Count OTPs issued for rate limiting (old OTPs are superseded, not deleted,
+// so this count reflects real send volume within the window).
+otpSchema.statics.countRecent = function(email, purpose, windowMs) {
+  return this.countDocuments({
+    email,
+    purpose,
+    createdAt: { $gt: new Date(Date.now() - windowMs) }
+  });
+};
+
+// Most recent OTP issued at (for resend cooldown checks)
+otpSchema.statics.getLastIssuedAt = async function(email, purpose) {
+  const latest = await this.findOne({ email, purpose }).sort({ createdAt: -1 }).select('createdAt');
+  return latest ? latest.createdAt : null;
+};
+
 otpSchema.statics.createOTP = async function(email, purpose) {
-  await this.deleteMany({ email, purpose });
+  // Supersede (don't delete) any outstanding OTPs so issue history stays
+  // intact for rate limiting. Only isUsed:false docs are verify candidates.
+  await this.updateMany({ email, purpose, isUsed: false }, { $set: { isUsed: true } });
   const otp = this.generateOTP();
   const verificationToken = this.generateVerificationToken();
-  await this.create({
+  const doc = await this.create({
     email,
     otpHash: this.hashValue(otp),
     verificationTokenHash: this.hashValue(verificationToken),
     purpose,
-    expiresAt: new Date(Date.now() + (process.env.OTP_EXPIRY || 5) * 60 * 1000)
+    expiresAt: new Date(Date.now() + this.expiryMinutes() * 60 * 1000)
   });
-  return { otp, verificationToken };
+  return { otp, verificationToken, id: doc._id };
 };
 
 otpSchema.statics.verifyOTP = async function(email, otp, purpose, verificationToken) {
@@ -62,7 +87,8 @@ otpSchema.statics.verifyOTP = async function(email, otp, purpose, verificationTo
   }
 
   if (otpDoc.attempts >= 5) {
-    await otpDoc.deleteOne();
+    otpDoc.isUsed = true;
+    await otpDoc.save();
     return { valid: false, message: 'Max attempts exceeded. Request a new OTP.' };
   }
 

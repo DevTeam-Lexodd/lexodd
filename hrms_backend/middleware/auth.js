@@ -27,7 +27,12 @@ const protect = async (req, res, next) => {
         return next(new AuthenticationError('Account deactivated. Contact HR.'));
       }
       if (employee.approvalStatus !== 'approved' && employee.role !== 'admin') {
-        return next(new AuthorizationError('Approval is not approved yet! Please wait!!'));
+        const message = employee.approvalStatus === 'rejected'
+          ? 'Your registration was rejected. Please contact HR.'
+          : 'Approval is pending yet!! Please wait...';
+        const error = new AuthorizationError(message);
+        error.extra = { approvalStatus: employee.approvalStatus };
+        return next(error);
       }
 
       if (employee.passwordChangedAt) {

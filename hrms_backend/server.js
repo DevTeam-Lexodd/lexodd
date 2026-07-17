@@ -64,9 +64,14 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Routes
 
-app.get("/",(req,res)=>{
-  res.send("Welcome to lexodd API");
-})
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Welcome to lexodd API',
+    docs: '/api',
+    health: '/api/health'
+  });
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -85,7 +90,8 @@ app.get('/api', (req, res) => {
     endpoints: {
       auth: 'POST /api/auth/signup, POST /api/auth/login, GET /api/auth/me',
       employees: 'GET /api/employees, GET /api/employees/dashboard',
-      leaves: 'POST /api/employees/:id/leaves',
+      approvals: 'GET /api/employees/approvals/pending, PUT /api/employees/:id/approval',
+      leaves: 'POST /api/employees/:id/leaves, PUT /api/employees/leaves/:leaveId/approve',
       otp: 'POST /api/otp/send, POST /api/otp/verify'
     }
   });
@@ -132,16 +138,6 @@ const startServer = async () => {
     console.log('');
   });
 };
-
-// Root route
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: 'Welcome to lexodd API',
-    docs: '/api',
-    health: '/api/health'
-  });
-});
 
 startServer();
 

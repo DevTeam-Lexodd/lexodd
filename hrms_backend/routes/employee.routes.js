@@ -3,12 +3,15 @@ const router = express.Router();
 
 const Employee = require('../models/Employee');
 const Leave = require('../models/Leave');
-const { sendEmail } = require('../utils/email');
+const { notifyAdminsOfLeave, notifyEmployeeOfApproval, notifyEmployeeOfLeaveDecision } = require('../services/notificationService');
 const ApiResponse = require('../utils/apiResponse');
 const { protect, authorize } = require('../middleware/auth');
-const { catchAsync, AppError, NotFoundError, AuthorizationError } = require('../middleware/errorHandler');
-const { validateObjectId, validateLeave, validateLeaveApproval } = require('../middleware/validate');
+const { catchAsync, AppError, NotFoundError, AuthorizationError, ConflictError } = require('../middleware/errorHandler');
+const { validateObjectId, validateLeave, validateLeaveApproval, validateApproval } = require('../middleware/validate');
 const logger = require('../utils/logger');
+
+// NOTE: static routes (/dashboard, /leaves, /approvals/pending) must stay
+// above parameterized routes (/:id) so Express doesn't treat them as an ID.
 
 // GET /api/employees
 router.get('/', protect, authorize('hr', 'admin', 'manager'), catchAsync(async (req, res) => {
@@ -19,6 +22,9 @@ router.get('/', protect, authorize('hr', 'admin', 'manager'), catchAsync(async (
   let filter = { isActive: true };
   if (req.query.department) filter.department = req.query.department;
   if (req.query.employmentType) filter.employmentType = req.query.employmentType;
+  if (req.query.approvalStatus && ['pending', 'approved', 'rejected'].includes(req.query.approvalStatus)) {
+    filter.approvalStatus = req.query.approvalStatus;
+  }
 
   if (req.query.search) {
     const s = new RegExp(req.query.search, 'i');
@@ -40,17 +46,38 @@ router.get('/dashboard', protect, catchAsync(async (req, res) => {
     { $sort: { count: -1 } }
   ]);
   const pendingLeaves = await Leave.countDocuments({ status: 'pending' });
+  const pendingApprovals = await Employee.countDocuments({ approvalStatus: 'pending', isActive: true });
   const recentJoinees = await Employee.find({ isActive: true })
     .select('firstName lastName employeeId department designation dateOfJoining')
     .sort({ dateOfJoining: -1 }).limit(5);
 
-  return ApiResponse.success(res, 200, 'Dashboard', { totalEmployees, departmentStats, pendingLeaves, recentJoinees });
+  return ApiResponse.success(res, 200, 'Dashboard', { totalEmployees, departmentStats, pendingLeaves, pendingApprovals, recentJoinees });
+}));
+
+// GET /api/employees/approvals/pending - registration requests waiting on an admin decision
+router.get('/approvals/pending', protect, authorize('admin'), catchAsync(async (req, res) => {
+  const employees = await Employee.find({ approvalStatus: 'pending', isActive: true })
+    .select('firstName lastName email phone employeeId department designation dateOfJoining employmentType approvalStatus createdAt')
+    .sort({ createdAt: -1 });
+
+  return ApiResponse.success(res, 200, 'Pending registrations fetched', { employees, count: employees.length });
 }));
 
 // GET /api/employees/leaves - approval queue for administrators
 router.get('/leaves', protect, authorize('admin'), catchAsync(async (req, res) => {
-  const leaves = await Leave.find().populate('employee', 'firstName lastName email employeeId').sort({ createdAt: -1 });
-  return ApiResponse.success(res, 200, 'Leaves fetched', { leaves });
+  const filter = {};
+  if (req.query.status) {
+    if (!['pending', 'approved', 'rejected', 'cancelled'].includes(req.query.status)) {
+      throw new AppError('Invalid leave status filter', 400);
+    }
+    filter.status = req.query.status;
+  }
+
+  const leaves = await Leave.find(filter)
+    .populate('employee', 'firstName lastName email employeeId department designation')
+    .sort({ createdAt: -1 });
+
+  return ApiResponse.success(res, 200, 'Leaves fetched', { leaves, count: leaves.length });
 }));
 
 // GET /api/employees/:id
@@ -61,6 +88,92 @@ router.get('/:id', protect, validateObjectId, catchAsync(async (req, res) => {
     throw new AuthorizationError('Cannot view this profile');
   }
   return ApiResponse.success(res, 200, 'Employee fetched', { employee });
+}));
+
+// PUT /api/employees/:id/approval - admin approves or rejects a registration
+router.put('/:id/approval', protect, authorize('admin'), validateApproval, catchAsync(async (req, res) => {
+  const { status, rejectionReason } = req.body;
+
+  if (status === 'rejected' && (!rejectionReason || !rejectionReason.trim())) {
+    throw new AppError('Rejection reason is required when rejecting a registration.', 400);
+  }
+
+  const employee = await Employee.findById(req.params.id);
+  if (!employee) throw new NotFoundError('Employee');
+
+  if (employee._id.toString() === req.employee._id.toString()) {
+    throw new AppError('You cannot change the approval status of your own account.', 400);
+  }
+
+  if (employee.approvalStatus === status) {
+    throw new ConflictError(`Registration is already ${status}.`);
+  }
+
+  employee.approvalStatus = status;
+  employee.approvedBy = req.employee._id;
+  employee.approvalDate = new Date();
+  employee.rejectionReason = status === 'rejected' ? rejectionReason.trim() : undefined;
+  await employee.save();
+
+  logger.info(`Registration ${status}: ${employee.employeeId} by ${req.employee.employeeId}`);
+
+  // Notify the employee of the decision (non-blocking)
+  notifyEmployeeOfApproval(employee, status === 'approved', employee.rejectionReason);
+
+  return ApiResponse.success(res, 200, `Registration ${status}.`, {
+    employee: {
+      id: employee._id,
+      employeeId: employee.employeeId,
+      firstName: employee.firstName,
+      lastName: employee.lastName,
+      email: employee.email,
+      department: employee.department,
+      approvalStatus: employee.approvalStatus,
+      rejectionReason: employee.rejectionReason
+    }
+  });
+}));
+
+// PUT /api/employees/leaves/:leaveId/approve - approve or reject a leave request
+router.put('/leaves/:leaveId/approve', protect, authorize('hr', 'admin', 'manager'), validateLeaveApproval, catchAsync(async (req, res) => {
+  const { status, rejectionReason } = req.body;
+
+  if (status === 'rejected' && (!rejectionReason || !rejectionReason.trim())) {
+    throw new AppError('Rejection reason is required when rejecting a leave.', 400);
+  }
+
+  const leave = await Leave.findById(req.params.leaveId);
+  if (!leave) throw new NotFoundError('Leave');
+  if (leave.status !== 'pending') {
+    throw new ConflictError(`Leave already ${leave.status}.`);
+  }
+
+  const emp = await Employee.findById(leave.employee);
+
+  // Balance check happens at approval time - the request may pre-date other approvals
+  if (status === 'approved' && emp && emp.leaveBalance[leave.leaveType] !== undefined) {
+    if (emp.leaveBalance[leave.leaveType] < leave.numberOfDays) {
+      throw new AppError(`Insufficient ${leave.leaveType} balance (${emp.leaveBalance[leave.leaveType]} days left). Reject instead.`, 400);
+    }
+  }
+
+  leave.status = status;
+  leave.approvedBy = req.employee._id;
+  leave.approvalDate = new Date();
+  if (status === 'rejected') leave.rejectionReason = rejectionReason.trim();
+  await leave.save();
+
+  if (status === 'approved' && emp && emp.leaveBalance[leave.leaveType] !== undefined) {
+    emp.leaveBalance[leave.leaveType] -= leave.numberOfDays;
+    await emp.save();
+  }
+
+  logger.info(`Leave ${status}: ${leave._id} by ${req.employee.employeeId}`);
+
+  // Notify the employee of the decision (non-blocking)
+  if (emp) notifyEmployeeOfLeaveDecision(leave, emp, status === 'approved', leave.rejectionReason);
+
+  return ApiResponse.success(res, 200, `Leave ${status}`, { leave });
 }));
 
 // PUT /api/employees/:id
@@ -74,11 +187,17 @@ router.put('/:id', protect, validateObjectId, catchAsync(async (req, res) => {
   if (req.body.approvalStatus !== undefined && req.employee.role !== 'admin') {
     throw new AuthorizationError('Only an admin can change a user approval status');
   }
-  
+
   const updates = {};
   allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
   if (['hr', 'admin'].includes(req.employee.role)) {
     hrOnly.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+  }
+
+  // Keep the audit trail consistent when approval changes through the generic update
+  if (updates.approvalStatus && ['approved', 'rejected'].includes(updates.approvalStatus)) {
+    updates.approvedBy = req.employee._id;
+    updates.approvalDate = new Date();
   }
 
   const employee = await Employee.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true });
@@ -139,33 +258,11 @@ router.post('/:id/leaves', protect, validateObjectId, validateLeave, catchAsync(
   });
 
   logger.info(`Leave applied: ${employee.employeeId} - ${days} days`);
+
+  // Let admins know a leave request is waiting for review (non-blocking)
+  notifyAdminsOfLeave(leave, employee);
+
   return ApiResponse.success(res, 201, 'Leave submitted', { leave });
-}));
-
-// PUT /api/employees/leaves/:leaveId/approve
-router.put('/leaves/:leaveId/approve', protect, authorize('hr', 'admin', 'manager'), validateLeaveApproval, catchAsync(async (req, res) => {
-  const { status, rejectionReason } = req.body;
-
-  const leave = await Leave.findById(req.params.leaveId);
-  if (!leave) throw new NotFoundError('Leave');
-  if (leave.status !== 'pending') throw new AppError(`Already ${leave.status}`, 400);
-
-  leave.status = status;
-  leave.approvedBy = req.employee._id;
-  leave.approvalDate = new Date();
-  if (status === 'rejected') leave.rejectionReason = rejectionReason;
-  await leave.save();
-
-  if (status === 'approved') {
-    const emp = await Employee.findById(leave.employee);
-    if (emp && emp.leaveBalance[leave.leaveType] !== undefined) {
-      emp.leaveBalance[leave.leaveType] -= leave.numberOfDays;
-      await emp.save();
-    }
-  }
-
-  logger.info(`Leave ${status}: ${leave._id}`);
-  return ApiResponse.success(res, 200, `Leave ${status}`, { leave });
 }));
 
 module.exports = router;
