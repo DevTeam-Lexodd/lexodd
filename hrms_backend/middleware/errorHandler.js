@@ -29,10 +29,25 @@ class AuthorizationError extends AppError {
   }
 }
 
+class ConflictError extends AppError {
+  constructor(message = 'Resource already exists') {
+    super(message, 409, 'ERR_CONFLICT');
+  }
+}
+
+// Friendly duplicate-key messages for known unique fields
+const duplicateKeyMessage = (keyValue) => {
+  const field = Object.keys(keyValue || {})[0] || 'field';
+  const messages = {
+    email: 'Email already registered. Please login.',
+    phone: 'Phone number already registered.',
+    employeeId: 'Duplicate employee ID. Please retry.'
+  };
+  return messages[field] || `Duplicate value for ${field}`;
+};
+
 const errorHandler = (err, req, res, next) => {
-  let error = { ...err };
-  error.message = err.message;
-  error.statusCode = err.statusCode;
+  let error = err;
 
   logger.error(`${err.message}`, {
     stack: err.stack,
@@ -40,20 +55,19 @@ const errorHandler = (err, req, res, next) => {
     url: req.originalUrl
   });
 
-  // Mongoose CastError
+  // Mongoose CastError (bad ObjectId etc.)
   if (err.name === 'CastError') {
     error = new NotFoundError('Resource');
   }
 
-  // Mongoose Duplicate Key
+  // Mongoose Duplicate Key (unique index violation, e.g. signup race)
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    error = new AppError(`Duplicate value for ${field}`, 400, 'ERR_DUPLICATE');
+    error = new AppError(duplicateKeyMessage(err.keyValue), 409, 'ERR_DUPLICATE');
   }
 
   // Mongoose Validation
   if (err.name === 'ValidationError') {
-    const messages = Object.values(err.errors).map(val => val.message);
+    const messages = Object.values(err.errors).map((val) => val.message);
     error = new AppError(`Validation failed: ${messages.join('. ')}`, 400, 'ERR_VALIDATION');
   }
 
@@ -65,11 +79,25 @@ const errorHandler = (err, req, res, next) => {
     error = new AuthenticationError('Token expired. Please login again.');
   }
 
-  res.status(error.statusCode || 500).json({
+  // Microsoft Graph email credentials missing
+  if (err.code === 'EMAIL_NOT_CONFIGURED') {
+    error = new AppError('Email service is not configured. Please try again later.', 503, 'ERR_EMAIL_NOT_CONFIGURED');
+  }
+
+  const statusCode = error.statusCode || 500;
+  const isOperational = error.isOperational === true;
+
+  // Never leak internal error details on unexpected 5xx responses
+  const message = isOperational || statusCode < 500
+    ? error.message
+    : (process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong. Please try again later.');
+
+  res.status(statusCode).json({
     success: false,
-    status: error.status || 'error',
+    status: error.status || (statusCode < 500 ? 'fail' : 'error'),
     errorCode: error.errorCode || 'ERR_UNKNOWN',
-    message: error.message || 'Internal Server Error',
+    message: message || 'Internal Server Error',
+    ...(error.extra ? { data: error.extra } : {}),
     ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
   });
 };
@@ -85,4 +113,5 @@ module.exports.AppError = AppError;
 module.exports.NotFoundError = NotFoundError;
 module.exports.AuthenticationError = AuthenticationError;
 module.exports.AuthorizationError = AuthorizationError;
+module.exports.ConflictError = ConflictError;
 module.exports.catchAsync = catchAsync;

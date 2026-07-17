@@ -144,6 +144,15 @@ const validateObjectId = [
   handleValidationErrors
 ];
 
+// Employee Approval Validation (admin approves/rejects a registration)
+const validateApproval = [
+  param('id').notEmpty().withMessage('ID required').isMongoId().withMessage('Invalid ID format'),
+  body('status').notEmpty().withMessage('Status required')
+    .isIn(['approved', 'rejected']).withMessage('Status must be approved or rejected'),
+  body('rejectionReason').optional().trim().isLength({ max: 500 }).withMessage('Rejection reason too long'),
+  handleValidationErrors
+];
+
 module.exports = {
   handleValidationErrors,
   validateSignup,
@@ -155,5 +164,6 @@ module.exports = {
   validatePasswordChange,
   validateLeave,
   validateLeaveApproval,
-  validateObjectId
+  validateObjectId,
+  validateApproval
 };

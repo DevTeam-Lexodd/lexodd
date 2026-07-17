@@ -31,14 +31,40 @@ class _HomeScreenState extends State<HomeScreen> {
     if (employee != null &&
         employee.role != 'admin' &&
         employee.approvalStatus != 'approved') {
+      final isRejected = employee.approvalStatus == 'rejected';
       return Scaffold(
           body: Center(
               child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: Text('Approval is not approved yet! Please wait!!',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.w600)))));
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(
+                        isRejected
+                            ? Iconsax.close_circle
+                            : Iconsax.timer_pause,
+                        size: 64,
+                        color: isRejected
+                            ? AppTheme.errorColor
+                            : AppTheme.primaryColor),
+                    const SizedBox(height: 20),
+                    Text(
+                        isRejected
+                            ? 'Your registration was rejected.\nPlease contact HR.'
+                            : 'Approval is pending yet!! Please wait...',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 24),
+                    if (!isRejected)
+                      OutlinedButton.icon(
+                          onPressed: () =>
+                              context.read<AuthProvider>().refreshProfile(),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Check again')),
+                    TextButton(
+                        onPressed: () =>
+                            context.read<AuthProvider>().logout(),
+                        child: const Text('Logout')),
+                  ]))));
     }
     final tabs = employee?.role == 'admin'
         ? [

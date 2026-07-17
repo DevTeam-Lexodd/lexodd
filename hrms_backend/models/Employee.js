@@ -98,6 +98,9 @@ const employeeSchema = new mongoose.Schema({
   isActive: { type: Boolean, default: true },
   // New registrations cannot use protected HRMS data until an admin approves them.
   approvalStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' },
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee' },
+  approvalDate: Date,
+  rejectionReason: { type: String, trim: true, maxlength: 500 },
   passwordChangedAt: Date,
   lastLogin: Date,
   loginAttempts: { type: Number, default: 0 },

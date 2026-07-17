@@ -2,21 +2,16 @@ const express = require('express');
 const router = express.Router();
 
 const Employee = require('../models/Employee');
-const OTP = require('../models/OTP');
-const PendingSignup = require('../models/PendingSignup');
-const { sendOTP } = require('../utils/email');
+const otpService = require('../services/otpService');
+const { notifyAdminsOfSignup } = require('../services/notificationService');
 const ApiResponse = require('../utils/apiResponse');
 const { protect } = require('../middleware/auth');
-const { catchAsync, AppError, AuthenticationError, NotFoundError } = require('../middleware/errorHandler');
+const { catchAsync, AppError, AuthenticationError, NotFoundError, ConflictError } = require('../middleware/errorHandler');
 const {
   validateSignup, validateLogin, validateOTP, validateEmail,
   validatePasswordChange, validateUpdateProfile, validatePasswordReset
 } = require('../middleware/validate');
 const logger = require('../utils/logger');
-const crypto = require('crypto');
-
-// Hash verification token for storage
-const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 // POST /api/auth/signup - complete a previously email-verified registration
 router.post('/signup', validateSignup, catchAsync(async (req, res) => {
@@ -29,20 +24,17 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
     emergencyContact, bankDetails, documents, education, password
   } = req.body;
 
-  // Email/phone already registered?
+  // Email/phone already registered? (duplicate-key race is also mapped to 409 by the error handler)
   const existing = await Employee.findOne({ $or: [{ email }, { phone }] });
   if (existing) {
-    if (existing.email === email) throw new AppError('Email already registered', 400);
-    if (existing.phone === phone) throw new AppError('Phone already registered', 400);
+    if (existing.email === email) throw new ConflictError('Email already registered. Please login.');
+    if (existing.phone === phone) throw new ConflictError('Phone number already registered.');
   }
 
   const { verificationToken } = req.body;
-  if (!verificationToken) throw new AppError('Verify your email before completing registration.', 400);
-  const verificationTokenHash = hashToken(verificationToken);
-  const pending = await PendingSignup.findOne({ verificationTokenHash }).select('+verificationTokenHash');
-  if (!pending || pending.email !== email) throw new AppError('Email verification expired. Please verify your email again.', 400);
+  const pending = await otpService.assertVerifiedSignup(email, verificationToken);
 
-  // Store signup data in PendingSignup
+  // Store signup data - starts as pending until an admin approves it
   const signupData = {
     firstName, lastName, email, phone, alternatePhone,
     dateOfBirth, gender, bloodGroup, maritalStatus,
@@ -57,10 +49,19 @@ router.post('/signup', validateSignup, catchAsync(async (req, res) => {
   };
 
   const employee = await Employee.create(signupData);
-  await PendingSignup.deleteOne({ _id: pending._id });
+  await pending.deleteOne();
   const token = employee.getSignedJwtToken();
+
   logger.info(`New employee registered: ${employee.employeeId} - ${employee.fullName}`);
-  return ApiResponse.success(res, 201, 'Registration submitted for admin approval.', { token, employee, approvalStatus: employee.approvalStatus });
+
+  // Let admins know a registration is waiting for their decision (non-blocking)
+  notifyAdminsOfSignup(employee);
+
+  return ApiResponse.success(res, 201, 'Registration submitted for admin approval.', {
+    token,
+    employee,
+    approvalStatus: employee.approvalStatus
+  });
 }));
 
 // POST /api/auth/login
@@ -107,46 +108,10 @@ router.post('/login', validateLogin, catchAsync(async (req, res) => {
   });
 }));
 
-// POST /api/auth/send-otp - Send OTP for login or password reset
+// POST /api/auth/send-otp - Send OTP for signup (email_verification), login, or password reset
 router.post('/send-otp', validateEmail, catchAsync(async (req, res) => {
   const { email, purpose } = req.body;
-  const otpPurpose = purpose || 'login';
-  const validPurposes = ['email_verification', 'login', 'password_reset'];
-
-  if (!validPurposes.includes(otpPurpose)) {
-    throw new AppError('Invalid purpose', 400);
-  }
-
-  // Password reset / login — account must exist
-  if (otpPurpose === 'password_reset' || otpPurpose === 'login') {
-    const employee = await Employee.findOne({ email });
-    if (!employee) throw new NotFoundError('Account');
-  }
-
-  // Rate limit: 3 per 15 min
-  const recent = await OTP.countDocuments({
-    email,
-    purpose: otpPurpose,
-    createdAt: { $gt: new Date(Date.now() - 15 * 60 * 1000) }
-  });
-
-  if (recent >= 3) {
-    throw new AppError('Too many requests. Wait 15 minutes.', 429);
-  }
-
-  const { otp, verificationToken } = await OTP.createOTP(email, otpPurpose);
-
-  try {
-    const emailResult = await sendOTP(email, otp, otpPurpose);
-    if (!emailResult.success) {
-      throw new AppError('Unable to send OTP email.', 502);
-    }
-  } catch (err) {
-    await OTP.deleteMany({ email, purpose: otpPurpose });
-    logger.warn(`Email failed: ${err.message}`);
-    throw err;
-  }
-
+  const { verificationToken } = await otpService.requestOTP({ email, purpose: purpose || 'login' });
   return ApiResponse.success(res, 200, 'OTP sent successfully.', { verificationToken });
 }));
 
@@ -155,17 +120,13 @@ router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
   const { email, otp, purpose, verificationToken } = req.body;
   const otpPurpose = purpose || 'email_verification';
 
-  const result = await OTP.verifyOTP(email, otp, otpPurpose, verificationToken);
-  if (!result.valid) throw new AppError(result.message, 400);
+  await otpService.verifyOTP({ email, otp, purpose: otpPurpose, verificationToken });
 
   if (otpPurpose === 'email_verification') {
-    const verificationTokenHash = hashToken(verificationToken);
-    await PendingSignup.findOneAndUpdate(
-      { verificationTokenHash },
-      { email, data: { emailVerified: true }, expiresAt: new Date(Date.now() + 10 * 60 * 1000) },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
-    return ApiResponse.success(res, 200, 'Email verified. Complete your registration.', { verified: true, verificationToken });
+    return ApiResponse.success(res, 200, 'Email verified. Complete your registration.', {
+      verified: true,
+      verificationToken
+    });
   }
 
   if (otpPurpose === 'login') {
@@ -186,22 +147,21 @@ router.post('/verify-otp', validateOTP, catchAsync(async (req, res) => {
         firstName: employee.firstName,
         lastName: employee.lastName,
         email: employee.email,
-        department: employee.department
+        department: employee.department,
+        approvalStatus: employee.approvalStatus
       }
     });
   }
 
-  if (otpPurpose === 'password_reset') {
-    return ApiResponse.success(res, 200, result.message, { verified: true });
-  }
+  // password_reset
+  return ApiResponse.success(res, 200, 'OTP verified successfully.', { verified: true });
 }));
 
 // POST /api/auth/reset-password
 router.post('/reset-password', validatePasswordReset, catchAsync(async (req, res) => {
   const { email, otp, newPassword, verificationToken } = req.body;
 
-  const result = await OTP.verifyOTP(email, otp, 'password_reset', verificationToken);
-  if (!result.valid) throw new AppError(result.message, 400);
+  await otpService.verifyOTP({ email, otp, purpose: 'password_reset', verificationToken });
 
   const employee = await Employee.findOne({ email }).select('+password');
   if (!employee) throw new NotFoundError('Employee');
