@@ -27,15 +27,15 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [ChangeNotifierProvider(create: (_) => AuthProvider())],
       child: MaterialApp(
-        title: 'Lexodd HRMS',
+        title: 'Lexodd',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.lightTheme,
         home: const SplashScreen(),
         routes: {
           SplashScreen.routeName: (_) => const SplashScreen(),
           LoginScreen.routeName: (_) => const LoginScreen(),
-          SignupScreen.routeName: (_) => const SignupScreen(),
           OTPScreen.routeName: (_) => const OTPScreen(),
+          SignupScreen.routeName: (_) => const SignupScreen(),
           HomeScreen.routeName: (_) => const HomeScreen(),
           ProfileScreen.routeName: (_) => const ProfileScreen(),
         },
