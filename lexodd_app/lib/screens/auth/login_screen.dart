@@ -5,6 +5,7 @@ import 'package:iconsax/iconsax.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_snackbar.dart';
+import '../../utils/validators.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/custom_text_field.dart';
 import '../home/home_screen.dart';
@@ -45,7 +46,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _showOtpLogin() async {
-    final email = _isValidEmail(_emailController.text.trim()) ? _emailController.text.trim() : null;
+    final email = AppValidators.isValidEmail(_emailController.text.trim())
+        ? _emailController.text.trim()
+        : null;
     await showDialog<void>(
       context: context,
       builder: (_) => OTPScreen(email: email, displayAsDialog: true),
@@ -53,7 +56,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _showForgotPassword() async {
-    final email = _isValidEmail(_emailController.text.trim()) ? _emailController.text.trim() : null;
+    final email = AppValidators.isValidEmail(_emailController.text.trim())
+        ? _emailController.text.trim()
+        : null;
     await showDialog<void>(
       context: context,
       builder: (_) => OTPScreen(
@@ -119,11 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         hint: 'Enter your email',
                         prefixIcon: Iconsax.sms,
                         keyboardType: TextInputType.emailAddress,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) return 'Required';
-                          if (!_isValidEmail(value.trim())) return 'Invalid email';
-                          return null;
-                        },
+                        validator: AppValidators.email,
                       ),
                       const SizedBox(height: 16),
                       CustomTextField(
@@ -191,9 +192,5 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     );
-  }
-
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email);
   }
 }

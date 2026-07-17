@@ -6,6 +6,7 @@ import 'package:iconsax/iconsax.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/app_snackbar.dart';
+import '../../utils/validators.dart';
 import '../../widgets/custom_button.dart';
 import '../home/home_screen.dart';
 
@@ -16,7 +17,11 @@ class OTPScreen extends StatefulWidget {
   final bool isEmailVerification;
   final bool displayAsDialog;
   final String? verificationToken;
-  final VoidCallback? onVerified;
+
+  /// Called after a successful verification with the verificationToken that
+  /// was actually verified. The token matters: it changes every time the user
+  /// resends the OTP, and the signup request must carry the latest one.
+  final ValueChanged<String>? onVerified;
 
   const OTPScreen({
     super.key,
@@ -101,7 +106,7 @@ class _OTPScreenState extends State<OTPScreen> {
 
   Future<void> _sendOTP() async {
     final email = _emailController.text.trim();
-    if (!_isValidEmail(email)) {
+    if (!AppValidators.isValidEmail(email)) {
       AppSnackbar.error(context, 'Enter a valid email address');
       return;
     }
@@ -157,16 +162,27 @@ class _OTPScreenState extends State<OTPScreen> {
       return;
     }
 
+    // Hand control back to the caller (e.g. signup) together with the token
+    // that was just verified - never a stale token captured before a resend.
     if (widget.onVerified != null) {
-      widget.onVerified!();
+      widget.onVerified!(_verificationToken!);
       return;
     }
 
-    if (_isDialog) {
+    if (_purpose == 'login') {
+      // A session exists now - go home and drop the whole auth stack so the
+      // back button cannot return to login/OTP screens.
       Navigator.of(context, rootNavigator: true)
           .pushNamedAndRemoveUntil(HomeScreen.routeName, (_) => false);
-    } else {
-      Navigator.of(context).pushReplacementNamed(HomeScreen.routeName);
+      return;
+    }
+
+    // email_verification without a callback: the user is NOT registered yet,
+    // so there is no session and Home would be wrong. Just report success and
+    // close, letting the caller continue its flow.
+    AppSnackbar.success(context, 'Email verified');
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop(true);
     }
   }
 
@@ -177,7 +193,7 @@ class _OTPScreenState extends State<OTPScreen> {
       AppSnackbar.error(context, 'Enter the 6-digit OTP from your email');
       return;
     }
-    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$').hasMatch(newPassword)) {
+    if (!AppValidators.isStrongPassword(newPassword)) {
       AppSnackbar.error(context, 'Password needs min 8 chars, uppercase, lowercase and number');
       return;
     }
@@ -407,9 +423,5 @@ class _OTPScreenState extends State<OTPScreen> {
         }),
       );
     });
-  }
-
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w\-.]+@([\w-]+\.)+[\w-]{2,}$').hasMatch(email);
   }
 }

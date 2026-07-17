@@ -5,8 +5,10 @@ import 'package:intl/intl.dart';
 import '../../config/constant.dart';
 import '../../config/theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/validators.dart';
 import '../../widgets/custom_button.dart';
 import '../../widgets/custom_text_field.dart';
+import '../home/home_screen.dart';
 import 'otp_screen.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -120,6 +122,13 @@ class _SignupScreenState extends State<SignupScreen> {
       return;
     }
 
+    // The server rejects signup without a recently verified email token -
+    // fail fast here instead of after a network call.
+    if (!_emailVerified || _verificationToken == null) {
+      _restartEmailVerification('Verify your email before creating the account.');
+      return;
+    }
+
     final data = {
       'firstName': _first.text.trim(),
       'lastName': _last.text.trim(),
@@ -134,7 +143,8 @@ class _SignupScreenState extends State<SignupScreen> {
       'employmentType': _employmentType!,
       if (_workLocation != null) 'workLocation': _workLocation,
       if (_manager.text.isNotEmpty) 'reportingManager': _manager.text.trim(),
-      if (_ctc.text.isNotEmpty) 'ctc': double.tryParse(_ctc.text),
+      if (_ctc.text.trim().isNotEmpty)
+        'ctc': double.tryParse(_ctc.text.trim()),
       'address': {
         'street': _street.text.trim(),
         'city': _city.text.trim(),
@@ -155,25 +165,58 @@ class _SignupScreenState extends State<SignupScreen> {
         if (_accountType != null) 'accountType': _accountType,
       },
       'documents': {
-        if (_aadhar.text.isNotEmpty) 'aadharNumber': _aadhar.text,
-        if (_pan.text.isNotEmpty) 'panNumber': _pan.text.toUpperCase()
+        if (_aadhar.text.trim().isNotEmpty)
+          'aadharNumber': _aadhar.text.trim(),
+        if (_pan.text.trim().isNotEmpty)
+          'panNumber': _pan.text.trim().toUpperCase()
       },
       'password': _password.text,
+      'verificationToken': _verificationToken,
     };
 
-    data['verificationToken'] = _verificationToken;
     final auth = context.read<AuthProvider>();
     final registered = await auth.signup(data);
-    if (registered && mounted) {
-      Navigator.of(context).pushReplacementNamed('/home');
-    } else if (mounted) {
-      _showError(auth.errorMessage ?? 'Registration failed');
+    if (!mounted) return;
+
+    if (registered) {
+      // The account exists and the user is signed in (pending approval) -
+      // drop the whole auth stack so "back" cannot return to login/signup.
+      Navigator.of(context)
+          .pushNamedAndRemoveUntil(HomeScreen.routeName, (_) => false);
+      return;
     }
+
+    // The verified-email token expires 10 minutes after the OTP is verified
+    // (PENDING_SIGNUP_TTL_MS on the server). Keep everything the user typed
+    // and send them back to re-verify instead of dead-ending the form.
+    if (auth.errorCode == 'ERR_EMAIL_NOT_VERIFIED') {
+      _restartEmailVerification(auth.errorMessage ??
+          'Email verification expired. Please verify again to finish signing up.');
+      return;
+    }
+
+    _showError(auth.errorMessage ?? 'Registration failed');
+  }
+
+  /// Sends the user back to the email-verification gate without losing the
+  /// form data they already filled in.
+  void _restartEmailVerification(String message) {
+    // The wizard is still on screen here, so the controller is attached and
+    // can be reset safely before the verification gate replaces it.
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(0);
+    }
+    setState(() {
+      _emailVerified = false;
+      _verificationToken = null;
+      _currentPage = 0;
+    });
+    _showError(message);
   }
 
   Future<void> _startEmailVerification() async {
     final email = _email.text.trim();
-    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+    if (!AppValidators.isValidEmail(email)) {
       _showError('Enter a valid email address');
       return;
     }
@@ -197,10 +240,13 @@ class _SignupScreenState extends State<SignupScreen> {
         isEmailVerification: true,
         displayAsDialog: true,
         verificationToken: verificationToken,
-        onVerified: () {
+        onVerified: (verifiedToken) {
           Navigator.of(context, rootNavigator: true).pop();
           setState(() {
-            _verificationToken = verificationToken;
+            // Store the token that was actually verified. It differs from the
+            // original one whenever the user resent the OTP in the dialog, and
+            // signup is rejected server-side if a stale token is submitted.
+            _verificationToken = verifiedToken;
             _emailVerified = true;
           });
         },
@@ -213,14 +259,6 @@ class _SignupScreenState extends State<SignupScreen> {
 
   void _showSuccess(String msg) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(msg), backgroundColor: AppTheme.successColor));
-
-  // Matches the backend rule: 2-50 chars, letters/spaces/'/- only
-  String? _nameValidator(String? v) {
-    if (v == null || v.trim().isEmpty) return 'Required';
-    if (v.trim().length < 2) return 'Min 2 characters';
-    if (!RegExp(r"^[a-zA-Z\s'-]+$").hasMatch(v.trim())) return 'Letters only';
-    return null;
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -391,14 +429,14 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _first,
                         label: 'First Name *',
                         hint: 'John',
-                        validator: _nameValidator)),
+                        validator: AppValidators.personName)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: CustomTextField(
                         controller: _last,
                         label: 'Last Name *',
                         hint: 'Doe',
-                        validator: _nameValidator)),
+                        validator: AppValidators.personName)),
               ]),
               const SizedBox(height: 16),
               CustomTextField(
@@ -408,14 +446,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   prefixIcon: Iconsax.sms,
                   keyboardType: TextInputType.emailAddress,
                   readOnly: true,
-                  validator: (v) {
-                    if (v!.isEmpty) return 'Required';
-                    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$')
-                        .hasMatch(v)) {
-                      return 'Invalid';
-                    }
-                    return null;
-                  }),
+                  validator: AppValidators.email),
               const SizedBox(height: 16),
               CustomTextField(
                   controller: _phone,
@@ -423,11 +454,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   hint: '9876543210',
                   prefixIcon: Iconsax.call,
                   keyboardType: TextInputType.phone,
-                  validator: (v) {
-                    if (v!.isEmpty) return 'Required';
-                    if (!RegExp(r'^[6-9]\d{9}$').hasMatch(v)) return 'Invalid';
-                    return null;
-                  }),
+                  validator: AppValidators.phone),
               const SizedBox(height: 16),
               CustomTextField(
                   controller: _dob,
@@ -436,7 +463,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   prefixIcon: Iconsax.calendar,
                   readOnly: true,
                   onTap: () => _selectDate(_dob, isDob: true),
-                  validator: (v) => v!.isEmpty ? 'Required' : null),
+                  validator: AppValidators.required),
               const SizedBox(height: 16),
               _dropdown('Gender *', _gender, AppConstants.genderOptions,
                   (v) => setState(() => _gender = v),
@@ -476,7 +503,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   label: 'Street *',
                   hint: 'House No, Street',
                   prefixIcon: Iconsax.home,
-                  validator: (v) => v!.isEmpty ? 'Required' : null),
+                  validator: AppValidators.required),
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(
@@ -484,14 +511,14 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _city,
                         label: 'City *',
                         hint: 'Hyderabad',
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: AppValidators.required)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: CustomTextField(
                         controller: _state,
                         label: 'State *',
                         hint: 'Telangana',
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: AppValidators.required)),
               ]),
               const SizedBox(height: 16),
               Row(children: [
@@ -501,11 +528,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         label: 'Pincode *',
                         hint: '500001',
                         keyboardType: TextInputType.number,
-                        validator: (v) {
-                          if (v!.isEmpty) return 'Required';
-                          if (!RegExp(r'^\d{6}$').hasMatch(v)) return 'Invalid';
-                          return null;
-                        })),
+                        validator: AppValidators.pincode)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: CustomTextField(
@@ -529,7 +552,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   label: 'Designation *',
                   hint: 'Software Engineer',
                   prefixIcon: Iconsax.briefcase,
-                  validator: (v) => v!.isEmpty ? 'Required' : null),
+                  validator: AppValidators.required),
               const SizedBox(height: 16),
               CustomTextField(
                   controller: _joiningDate,
@@ -538,7 +561,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   prefixIcon: Iconsax.calendar,
                   readOnly: true,
                   onTap: () => _selectDate(_joiningDate),
-                  validator: (v) => v!.isEmpty ? 'Required' : null),
+                  validator: AppValidators.required),
               const SizedBox(height: 16),
               _dropdown(
                   'Employment Type *',
@@ -564,7 +587,8 @@ class _SignupScreenState extends State<SignupScreen> {
                   label: 'Annual CTC (₹)',
                   hint: '500000',
                   prefixIcon: Iconsax.money,
-                  keyboardType: TextInputType.number),
+                  keyboardType: TextInputType.number,
+                  validator: AppValidators.amount),
             ])));
   }
 
@@ -582,7 +606,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   controller: _emergName,
                   label: 'Contact Name *',
                   hint: 'Full name',
-                  validator: (v) => v!.isEmpty ? 'Required' : null),
+                  validator: AppValidators.required),
               const SizedBox(height: 16),
               Row(children: [
                 Expanded(
@@ -590,7 +614,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _emergRelation,
                         label: 'Relationship *',
                         hint: 'Father',
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: AppValidators.required)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: CustomTextField(
@@ -598,7 +622,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         label: 'Phone *',
                         hint: '9876543210',
                         keyboardType: TextInputType.phone,
-                        validator: (v) => v!.isEmpty ? 'Required' : null)),
+                        validator: AppValidators.phone)),
               ]),
               const SizedBox(height: 32),
               const Divider(),
@@ -631,7 +655,8 @@ class _SignupScreenState extends State<SignupScreen> {
                         controller: _ifsc,
                         label: 'IFSC Code',
                         hint: 'SBIN0001234',
-                        textCapitalization: TextCapitalization.characters)),
+                        textCapitalization: TextCapitalization.characters,
+                        validator: AppValidators.ifsc)),
                 const SizedBox(width: 12),
                 Expanded(
                     child: _dropdown(
@@ -658,13 +683,15 @@ class _SignupScreenState extends State<SignupScreen> {
                   label: 'Aadhar Number',
                   hint: '123456789012',
                   prefixIcon: Iconsax.card,
-                  keyboardType: TextInputType.number),
+                  keyboardType: TextInputType.number,
+                  validator: AppValidators.aadhar),
               const SizedBox(height: 16),
               CustomTextField(
                   controller: _pan,
                   label: 'PAN Number',
                   hint: 'ABCDE1234F',
-                  textCapitalization: TextCapitalization.characters),
+                  textCapitalization: TextCapitalization.characters,
+                  validator: AppValidators.pan),
               const SizedBox(height: 32),
               const Divider(),
               const SizedBox(height: 16),
@@ -682,15 +709,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           Icon(_obscurePass ? Iconsax.eye_slash : Iconsax.eye),
                       onPressed: () =>
                           setState(() => _obscurePass = !_obscurePass)),
-                  validator: (v) {
-                    if (v!.isEmpty) return 'Required';
-                    if (v.length < 8) return 'Min 8 chars';
-                    if (!RegExp(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)')
-                        .hasMatch(v)) {
-                      return 'Need upper, lower & digit';
-                    }
-                    return null;
-                  }),
+                  validator: AppValidators.password),
               const SizedBox(height: 16),
               CustomTextField(
                   controller: _confirmPassword,
