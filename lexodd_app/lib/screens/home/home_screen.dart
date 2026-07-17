@@ -57,8 +57,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(height: 24),
                     if (!isRejected)
                       OutlinedButton.icon(
-                          onPressed: () =>
-                              context.read<AuthProvider>().refreshProfile(),
+                          onPressed: () async {
+                            final auth = context.read<AuthProvider>();
+                            final refreshed = await auth.refreshProfile();
+                            if (!mounted || refreshed) return;
+                            // /auth/me answers 403 while approval is pending -
+                            // surface the server message instead of failing silently.
+                            AppSnackbar.info(
+                                context,
+                                auth.errorMessage ??
+                                    'Still waiting for approval.');
+                          },
                           icon: const Icon(Icons.refresh),
                           label: const Text('Check again')),
                     TextButton(

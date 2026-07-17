@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/employee.dart';
+import '../services/api_service.dart';
 import '../services/auth_service.dart';
 
 enum AuthState { initial, loading, authenticated, unauthenticated, error }
@@ -10,10 +11,16 @@ class AuthProvider extends ChangeNotifier {
   AuthState _state = AuthState.initial;
   Employee? _employee;
   String? _errorMessage;
+  String? _errorCode;
 
   AuthState get state => _state;
   Employee? get employee => _employee;
   String? get errorMessage => _errorMessage;
+
+  /// Machine-readable failure code from the API (e.g. ERR_EMAIL_NOT_VERIFIED)
+  /// so screens can react to specific failures instead of parsing message text.
+  String? get errorCode => _errorCode;
+
   bool get isAuthenticated => _state == AuthState.authenticated;
   bool get isLoading => _state == AuthState.loading;
 
@@ -31,7 +38,7 @@ class AuthProvider extends ChangeNotifier {
   // Signup is available only after the email OTP has been verified.
   Future<bool> signup(Map<String, dynamic> data) async {
     _state = AuthState.loading;
-    _errorMessage = null;
+    _clearError();
     notifyListeners();
     try {
       _employee = await _authService.signup(data);
@@ -39,7 +46,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       _state = AuthState.error;
       notifyListeners();
       return false;
@@ -49,7 +56,7 @@ class AuthProvider extends ChangeNotifier {
   // Password login
   Future<bool> login(String email, String password) async {
     _state = AuthState.loading;
-    _errorMessage = null;
+    _clearError();
     notifyListeners();
     try {
       _employee = await _authService.login(email, password);
@@ -57,53 +64,38 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       _state = AuthState.error;
       notifyListeners();
       return false;
     }
   }
 
-  // OTP Login
-  Future<bool> loginWithOTP(String email, String otp,
-      {required String verificationToken}) async {
-    _state = AuthState.loading;
-    _errorMessage = null;
-    notifyListeners();
-    try {
-      await _authService.verifyOTP(email, otp,
-          purpose: 'login', verificationToken: verificationToken);
-      _employee = _authService.currentEmployee;
-      _state = AuthState.authenticated;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      _errorMessage = e.toString();
-      _state = AuthState.error;
-      notifyListeners();
-      return false;
-    }
-  }
-
-  // Send OTP for login, email verification, or password reset
+  // Send OTP for login, email verification, or password reset.
+  // Returns the verificationToken that must accompany the OTP on verify.
   Future<String?> sendOTP(String email, {String purpose = 'login'}) async {
     _state = AuthState.loading;
-    _errorMessage = null;
+    _clearError();
     notifyListeners();
     try {
       final token = await _authService.sendOTP(email, purpose: purpose);
-      _state = _employee != null ? AuthState.authenticated : AuthState.unauthenticated;
+      _state = _employee != null
+          ? AuthState.authenticated
+          : AuthState.unauthenticated;
       notifyListeners();
       return token;
     } catch (e) {
-      _errorMessage = e.toString();
-      _state = _employee != null ? AuthState.authenticated : AuthState.error;
+      _setError(e);
+      _state =
+          _employee != null ? AuthState.authenticated : AuthState.error;
       notifyListeners();
       return null;
     }
   }
 
-  // Verify OTP for signup (email_verification), login, or password_reset
+  // Verify OTP for signup (email_verification), login, or password_reset.
+  // Note: the password-reset flow does not call this - /auth/reset-password
+  // verifies the OTP atomically on the server (OTPs are single-use).
   Future<bool> verifyOTP(
     String email,
     String otp, {
@@ -120,7 +112,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       notifyListeners();
       return false;
     }
@@ -136,20 +128,22 @@ class AuthProvider extends ChangeNotifier {
       return await _authService.resetPassword(email, otp, newPassword,
           verificationToken: verificationToken);
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       notifyListeners();
       return false;
     }
   }
 
-  // Refresh the signed-in profile from the server
+  // Refresh the signed-in profile from the server.
+  // Fails with a 403 while the account awaits admin approval - callers should
+  // surface [errorMessage] instead of failing silently.
   Future<bool> refreshProfile() async {
     try {
       _employee = await _authService.getProfile();
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       notifyListeners();
       return false;
     }
@@ -161,7 +155,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return true;
     } catch (e) {
-      _errorMessage = e.toString();
+      _setError(e);
       notifyListeners();
       return false;
     }
@@ -171,12 +165,22 @@ class AuthProvider extends ChangeNotifier {
     await _authService.logout();
     _employee = null;
     _state = AuthState.unauthenticated;
-    _errorMessage = null;
+    _clearError();
     notifyListeners();
   }
 
   void clearError() {
-    _errorMessage = null;
+    _clearError();
     notifyListeners();
+  }
+
+  void _setError(Object error) {
+    _errorMessage = error.toString();
+    _errorCode = error is ApiException ? error.errorCode : null;
+  }
+
+  void _clearError() {
+    _errorMessage = null;
+    _errorCode = null;
   }
 }
